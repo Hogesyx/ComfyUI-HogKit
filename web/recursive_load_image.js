@@ -1,7 +1,6 @@
 import { app } from "../../scripts/app.js";
 
 const NODE_NAME = "HogKitLoadImage";
-const ROOT_FOLDER = "(root)";
 const FOLDER_WIDGET = "folder";
 const IMAGE_WIDGET = "image";
 
@@ -13,7 +12,11 @@ function getInputOptions(nodeData, inputName) {
 
 function getImageChoices(nodeData) {
   const choices = getInputOptions(nodeData, FOLDER_WIDGET).image_choices;
-  return choices && typeof choices === "object" ? choices : { [ROOT_FOLDER]: [] };
+  return choices && typeof choices === "object" ? choices : {};
+}
+
+function getRootFolder(choices) {
+  return Object.keys(choices)[0] || "";
 }
 
 function getWidget(node, name) {
@@ -36,9 +39,10 @@ function setWidgetValues(widget, values, preferredValue) {
 function updateImageChoices(node) {
   const folderWidget = getWidget(node, FOLDER_WIDGET);
   const imageWidget = getWidget(node, IMAGE_WIDGET);
-  const choices = node.imageChoices || { [ROOT_FOLDER]: [] };
+  const choices = node.imageChoices || {};
   const folders = Object.keys(choices);
-  const folder = folders.includes(folderWidget?.value) ? folderWidget.value : ROOT_FOLDER;
+  const rootFolder = getRootFolder(choices);
+  const folder = folders.includes(folderWidget?.value) ? folderWidget.value : rootFolder;
 
   setWidgetValues(folderWidget, folders, folder);
   setWidgetValues(imageWidget, choices[folder] || [], imageWidget?.value);
