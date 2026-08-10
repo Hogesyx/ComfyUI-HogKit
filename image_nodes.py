@@ -1,10 +1,15 @@
+import hashlib
 import math
+import os
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps, ImageSequence
 import torch
+import comfy.model_management
+import folder_paths
+import node_helpers
 import nodes
-from comfy_api.latest import io
+from comfy_api.latest import InputImpl, io
 
 
 RESOLUTION_ASPECT_RATIOS = {
@@ -131,6 +136,102 @@ QWEN_ASPECT_RATIOS = {
     "3:2": (1584, 1056),
     "2:3": (1056, 1584),
 }
+
+
+def _get_input_image_files():
+    input_dir = folder_paths.get_input_directory()
+    input_dir_real = os.path.realpath(input_dir)
+    files = []
+
+    for current_dir, _, filenames in os.walk(input_dir):
+        for filename in filenames:
+            full_path = os.path.join(current_dir, filename)
+            if not os.path.isfile(full_path) or not folder_paths.is_within_directory(input_dir_real, full_path):
+                continue
+            relative_path = os.path.relpath(full_path, input_dir).replace(os.sep, "/")
+            files.append(relative_path)
+
+    return sorted(folder_paths.filter_files_content_types(files, ["image"]))
+
+
+class RecursiveLoadImage(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="HogKitLoadImage",
+            search_aliases=["load image", "open image", "import image", "recursive image"],
+            display_name="HogKit Load Image",
+            category="HogKit/Image",
+            essentials_category="Basics",
+            description="Loads an image from the ComfyUI input directory, including nested subfolders.",
+            inputs=[
+                io.Combo.Input("image", options=_get_input_image_files(), upload=io.UploadType.image),
+            ],
+            outputs=[
+                io.Image.Output(),
+                io.Mask.Output(),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, image):
+        image_path = folder_paths.get_annotated_filepath(image)
+
+        dtype = comfy.model_management.intermediate_dtype()
+        device = comfy.model_management.intermediate_device()
+
+        components = InputImpl.VideoFromFile(image_path).get_components()
+        if components.images.shape[0] > 0:
+            mask = (
+                (1.0 - components.alpha[..., -1]).to(device=device, dtype=dtype)
+                if components.alpha is not None
+                else torch.zeros((components.images.shape[0], 64, 64), dtype=dtype, device=device)
+            )
+            return io.NodeOutput(components.images.to(device=device, dtype=dtype), mask)
+
+        image_file = node_helpers.pillow(Image.open, image_path)
+        output_images = []
+        output_masks = []
+        width, height = None, None
+
+        for frame in ImageSequence.Iterator(image_file):
+            frame = node_helpers.pillow(ImageOps.exif_transpose, frame)
+            has_alpha = "A" in frame.getbands()
+            frame = frame.convert("RGB")
+
+            if not output_images:
+                width, height = frame.size
+
+            if frame.size != (width, height):
+                continue
+
+            image_array = np.array(frame).astype(np.float32) / 255.0
+            output_images.append(torch.from_numpy(image_array)[None,].to(dtype=dtype))
+
+            if has_alpha:
+                mask_array = np.array(frame.getchannel("A")).astype(np.float32) / 255.0
+                mask = 1.0 - torch.from_numpy(mask_array)
+            else:
+                mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
+            output_masks.append(mask.unsqueeze(0).to(dtype=dtype))
+
+        output_image = torch.cat(output_images, dim=0)
+        output_mask = torch.cat(output_masks, dim=0)
+        return io.NodeOutput(output_image.to(device=device, dtype=dtype), output_mask.to(device=device, dtype=dtype))
+
+    @classmethod
+    def fingerprint_inputs(cls, image):
+        image_path = folder_paths.get_annotated_filepath(image)
+        image_hash = hashlib.sha256()
+        with open(image_path, "rb") as image_file:
+            image_hash.update(image_file.read())
+        return image_hash.digest().hex()
+
+    @classmethod
+    def validate_inputs(cls, image):
+        if not folder_paths.exists_annotated_filepath(image):
+            return f"Invalid image file: {image}"
+        return True
 
 RESAMPLE_METHODS = {
     "lanczos": Image.LANCZOS,

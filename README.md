@@ -39,6 +39,7 @@ The metadata editor writes only to the resolved LoRA folder. The ComfyUI process
 
 ### Image
 
+- **HogKit Load Image** loads images from the ComfyUI input directory and includes files in nested subfolders.
 - **HogKit Auto Resolution Selector** selects a stock aspect ratio and target dimensions from an image or override dimensions. It passes the image through and outputs `width` and `height`.
 - **HogKit Qwen Image Scaler** pads or crops images to the selected Qwen Image resolution.
 
