@@ -60,10 +60,14 @@ function imagePreviewUrl(image) {
 
 function setSelectedImage(node, image) {
   node.selectedImage = image;
+  if (node.imageSelectorWidget) {
+    node.imageSelectorWidget.value = image;
+  }
   if (node.imageInputWidget) {
     node.imageInputWidget.value = image;
   }
   node.setDirtyCanvas?.(true, true);
+  app.graph?.setDirtyCanvas?.(true, true);
 }
 
 function syncImageChoices(node) {
@@ -74,6 +78,9 @@ function syncImageChoices(node) {
     node.imageInputWidget.options = node.imageInputWidget.options || {};
     node.imageInputWidget.options.values = files;
     node.imageInputWidget.value = selected;
+  }
+  if (node.imageSelectorWidget) {
+    node.imageSelectorWidget.value = selected;
   }
   node.imageSelectorWidget?.setDirty?.();
 }
@@ -137,10 +144,12 @@ function renderImagePicker(picker, node) {
   content.replaceChildren();
   const choices = node.imageChoices || {};
   const folders = Object.keys(choices);
+  const rootFolder = folders[0];
+  const orderedFolders = [...folders.slice(1), rootFolder].filter(Boolean);
 
-  folders.forEach((folder, index) => {
+  orderedFolders.forEach((folder) => {
     const files = Array.isArray(choices[folder]) ? choices[folder] : [];
-    if (index === 0) {
+    if (folder === rootFolder) {
       const heading = document.createElement("div");
       heading.textContent = folder;
       heading.style.color = "#aaa";
@@ -312,6 +321,7 @@ class ImageSelectorWidget {
     this.name = SELECTOR_WIDGET;
     this.serialize = false;
     this.node = node;
+    this.value = node.selectedImage || "";
   }
 
   computeSize(width) {
@@ -334,7 +344,7 @@ class ImageSelectorWidget {
     ctx.font = "12px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(fitText(ctx, node.selectedImage || "Select an image", width - 28), 8, top + height / 2);
+    ctx.fillText(fitText(ctx, this.value || "Select an image", width - 28), 8, top + height / 2);
 
     ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
     ctx.beginPath();
