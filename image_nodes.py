@@ -3,6 +3,7 @@ import math
 import os
 
 import numpy as np
+from aiohttp import web
 from PIL import Image, ImageOps, ImageSequence
 import torch
 import comfy.model_management
@@ -10,6 +11,7 @@ import folder_paths
 import node_helpers
 import nodes
 from comfy_api.latest import InputImpl, io
+from server import PromptServer
 
 
 RESOLUTION_ASPECT_RATIOS = {
@@ -137,35 +139,73 @@ QWEN_ASPECT_RATIOS = {
     "2:3": (1056, 1584),
 }
 
+ROOT_FOLDER = "(root)"
 
-def _get_input_image_files():
+
+def _get_input_image_choices():
     input_dir = folder_paths.get_input_directory()
     input_dir_real = os.path.realpath(input_dir)
-    files = []
+    choices = {ROOT_FOLDER: []}
 
-    for current_dir, _, filenames in os.walk(input_dir):
-        for filename in filenames:
-            full_path = os.path.join(current_dir, filename)
-            if not os.path.isfile(full_path) or not folder_paths.is_within_directory(input_dir_real, full_path):
+    with os.scandir(input_dir) as entries:
+        for entry in entries:
+            if entry.is_file() and folder_paths.is_within_directory(input_dir_real, entry.path):
+                choices[ROOT_FOLDER].append(entry.name)
                 continue
-            relative_path = os.path.relpath(full_path, input_dir).replace(os.sep, "/")
-            files.append(relative_path)
 
-    return sorted(folder_paths.filter_files_content_types(files, ["image"]))
+            if not entry.is_dir(follow_symlinks=False) or not folder_paths.is_within_directory(input_dir_real, entry.path):
+                continue
+
+            files = []
+            with os.scandir(entry.path) as subfolder_entries:
+                for subfolder_entry in subfolder_entries:
+                    if subfolder_entry.is_file() and folder_paths.is_within_directory(input_dir_real, subfolder_entry.path):
+                        files.append(subfolder_entry.name)
+
+            image_files = folder_paths.filter_files_content_types(files, ["image"])
+            if image_files:
+                choices[entry.name] = sorted(image_files)
+
+    choices[ROOT_FOLDER] = sorted(folder_paths.filter_files_content_types(choices[ROOT_FOLDER], ["image"]))
+    return {
+        ROOT_FOLDER: choices[ROOT_FOLDER],
+        **{folder: choices[folder] for folder in sorted(choices) if folder != ROOT_FOLDER},
+    }
+
+
+def _get_input_image_path(folder, image):
+    choices = _get_input_image_choices()
+    if folder not in choices or image not in choices[folder]:
+        raise ValueError(f"Invalid image selection: {folder}/{image}")
+
+    relative_path = image if folder == ROOT_FOLDER else os.path.join(folder, image)
+    return folder_paths.get_annotated_filepath(relative_path)
 
 
 class RecursiveLoadImage(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        image_choices = _get_input_image_choices()
         return io.Schema(
             node_id="HogKitLoadImage",
             search_aliases=["load image", "open image", "import image", "recursive image"],
             display_name="HogKit Load Image",
             category="HogKit/Image",
             essentials_category="Basics",
-            description="Loads an image from the ComfyUI input directory, including nested subfolders.",
+            description="Loads an image from the ComfyUI input directory or one of its immediate subfolders.",
             inputs=[
-                io.Combo.Input("image", options=_get_input_image_files(), upload=io.UploadType.image),
+                io.Combo.Input(
+                    "folder",
+                    options=list(image_choices),
+                    default=ROOT_FOLDER,
+                    tooltip="Select the input subfolder. Only one level of subfolders is shown.",
+                    extra_dict={"image_choices": image_choices},
+                ),
+                io.Combo.Input(
+                    "image",
+                    options=image_choices[ROOT_FOLDER],
+                    upload=io.UploadType.image,
+                ),
             ],
             outputs=[
                 io.Image.Output(),
@@ -174,8 +214,8 @@ class RecursiveLoadImage(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, image):
-        image_path = folder_paths.get_annotated_filepath(image)
+    def execute(cls, folder, image):
+        image_path = _get_input_image_path(folder, image)
 
         dtype = comfy.model_management.intermediate_dtype()
         device = comfy.model_management.intermediate_device()
@@ -220,18 +260,27 @@ class RecursiveLoadImage(io.ComfyNode):
         return io.NodeOutput(output_image.to(device=device, dtype=dtype), output_mask.to(device=device, dtype=dtype))
 
     @classmethod
-    def fingerprint_inputs(cls, image):
-        image_path = folder_paths.get_annotated_filepath(image)
+    def fingerprint_inputs(cls, folder, image):
+        image_path = _get_input_image_path(folder, image)
         image_hash = hashlib.sha256()
         with open(image_path, "rb") as image_file:
             image_hash.update(image_file.read())
         return image_hash.digest().hex()
 
     @classmethod
-    def validate_inputs(cls, image):
-        if not folder_paths.exists_annotated_filepath(image):
-            return f"Invalid image file: {image}"
+    def validate_inputs(cls, folder, image):
+        try:
+            image_path = _get_input_image_path(folder, image)
+        except ValueError:
+            return f"Invalid image file: {folder}/{image}"
+        if not os.path.isfile(image_path):
+            return f"Invalid image file: {folder}/{image}"
         return True
+
+
+@PromptServer.instance.routes.get("/hogkit/load-image/files")
+async def get_load_image_files(request):
+    return web.json_response(_get_input_image_choices())
 
 RESAMPLE_METHODS = {
     "lanczos": Image.LANCZOS,
