@@ -168,7 +168,7 @@ def _get_input_image_choices():
             image_files = folder_paths.filter_files_content_types(files, ["image"])
             if image_files:
                 folder_name = f"{entry.name}/" if entry.name == root_folder else entry.name
-                choices[folder_name] = sorted(image_files)
+                choices[folder_name] = sorted(f"{entry.name}/{image}" for image in image_files)
 
     choices[root_folder] = sorted(folder_paths.filter_files_content_types(choices[root_folder], ["image"]))
     return {
@@ -177,22 +177,19 @@ def _get_input_image_choices():
     }
 
 
-def _get_input_image_path(folder, image):
+def _get_input_image_path(image):
     choices = _get_input_image_choices()
-    if folder not in choices or image not in choices[folder]:
-        raise ValueError(f"Invalid image selection: {folder}/{image}")
+    if image not in {image for files in choices.values() for image in files}:
+        raise ValueError(f"Invalid image selection: {image}")
 
-    root_folder = next(iter(choices))
-    folder_path = folder.rstrip("/")
-    relative_path = image if folder == root_folder else os.path.join(folder_path, image)
-    return folder_paths.get_annotated_filepath(relative_path)
+    return folder_paths.get_annotated_filepath(image)
 
 
 class RecursiveLoadImage(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         image_choices = _get_input_image_choices()
-        root_folder = next(iter(image_choices))
+        image_files = [image for files in image_choices.values() for image in files]
         return io.Schema(
             node_id="HogKitLoadImage",
             search_aliases=["load image", "open image", "import image", "recursive image"],
@@ -202,16 +199,10 @@ class RecursiveLoadImage(io.ComfyNode):
             description="Loads an image from the ComfyUI input directory or one of its immediate subfolders.",
             inputs=[
                 io.Combo.Input(
-                    "folder",
-                    options=list(image_choices),
-                    default=root_folder,
-                    tooltip="Select the input subfolder. Only one level of subfolders is shown.",
-                    extra_dict={"image_choices": image_choices},
-                ),
-                io.Combo.Input(
                     "image",
-                    options=image_choices[root_folder],
-                    upload=io.UploadType.image,
+                    options=image_files,
+                    tooltip="Select an image from the input directory or one of its immediate subfolders.",
+                    extra_dict={"image_choices": image_choices},
                 ),
             ],
             outputs=[
@@ -221,8 +212,8 @@ class RecursiveLoadImage(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, folder, image):
-        image_path = _get_input_image_path(folder, image)
+    def execute(cls, image):
+        image_path = _get_input_image_path(image)
 
         dtype = comfy.model_management.intermediate_dtype()
         device = comfy.model_management.intermediate_device()
@@ -267,21 +258,21 @@ class RecursiveLoadImage(io.ComfyNode):
         return io.NodeOutput(output_image.to(device=device, dtype=dtype), output_mask.to(device=device, dtype=dtype))
 
     @classmethod
-    def fingerprint_inputs(cls, folder, image):
-        image_path = _get_input_image_path(folder, image)
+    def fingerprint_inputs(cls, image):
+        image_path = _get_input_image_path(image)
         image_hash = hashlib.sha256()
         with open(image_path, "rb") as image_file:
             image_hash.update(image_file.read())
         return image_hash.digest().hex()
 
     @classmethod
-    def validate_inputs(cls, folder, image):
+    def validate_inputs(cls, image):
         try:
-            image_path = _get_input_image_path(folder, image)
+            image_path = _get_input_image_path(image)
         except ValueError:
-            return f"Invalid image file: {folder}/{image}"
+            return f"Invalid image file: {image}"
         if not os.path.isfile(image_path):
-            return f"Invalid image file: {folder}/{image}"
+            return f"Invalid image file: {image}"
         return True
 
 
