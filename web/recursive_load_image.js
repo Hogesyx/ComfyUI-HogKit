@@ -217,6 +217,30 @@ function closeImagePicker() {
   activePicker = null;
 }
 
+async function uploadImageFile(node, file) {
+  const form = new FormData();
+  form.append("image", file);
+  form.append("type", "input");
+  const response = await fetch("/upload/image", { method: "POST", body: form });
+  if (!response.ok) {
+    throw new Error(`Image upload failed (${response.status})`);
+  }
+
+  const result = await response.json();
+  const choicesResponse = await fetch("/hogkit/load-image/files");
+  if (!choicesResponse.ok) {
+    throw new Error(`Image list refresh failed (${choicesResponse.status})`);
+  }
+  node.imageChoices = await choicesResponse.json();
+  syncImageChoices(node);
+
+  const image = result.subfolder ? `${result.subfolder}/${result.name}` : result.name;
+  if (getImageFiles(node.imageChoices).includes(image)) {
+    setSelectedImage(node, image);
+  }
+  return image;
+}
+
 function showImagePicker(node, event) {
   closeImagePicker();
 
@@ -274,20 +298,7 @@ function showImagePicker(node, event) {
     }
     upload.disabled = true;
     try {
-      const form = new FormData();
-      form.append("image", file);
-      form.append("type", "input");
-      const response = await fetch("/upload/image", { method: "POST", body: form });
-      if (!response.ok) {
-        throw new Error(`Image upload failed (${response.status})`);
-      }
-      const result = await response.json();
-      node.imageChoices = await (await fetch("/hogkit/load-image/files")).json();
-      syncImageChoices(node);
-      const image = result.subfolder ? `${result.subfolder}/${result.name}` : result.name;
-      if (getImageFiles(node.imageChoices).includes(image)) {
-        setSelectedImage(node, image);
-      }
+      await uploadImageFile(node, file);
       renderImagePicker(picker, node);
     } catch (error) {
       console.error(error);
@@ -336,6 +347,22 @@ function showImagePicker(node, event) {
   popup.style.top = `${Math.min(clientY, window.innerHeight - popup.offsetHeight - 8)}px`;
 }
 
+function drawCanvasButton(ctx, rect, label) {
+  ctx.save();
+  ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
+  ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
+  ctx.beginPath();
+  ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.restore();
+}
+
 class ImageSelectorWidget {
   constructor(node) {
     this.type = "custom";
@@ -343,11 +370,13 @@ class ImageSelectorWidget {
     this.serialize = false;
     this.node = node;
     this.value = node.selectedImage || "";
+    this.browseRect = null;
     this.computeSize = this.computeSize.bind(this);
     this.setValue = this.setValue.bind(this);
     this.draw = this.draw.bind(this);
     this.mouse = this.mouse.bind(this);
     this.onClick = this.onClick.bind(this);
+    this.openFileBrowser = this.openFileBrowser.bind(this);
     this.setDirty = this.setDirty.bind(this);
   }
 
@@ -361,14 +390,17 @@ class ImageSelectorWidget {
   }
 
   draw(ctx, node, width, y) {
-    const x = 0;
+    const browseWidth = 64;
+    const gap = 6;
+    const selectWidth = Math.max(80, width - browseWidth - gap);
     const height = 24;
     const top = y + 2;
+    this.browseRect = { x: selectWidth + gap, y: top, w: browseWidth, h: height };
     ctx.save();
     ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
     ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
     ctx.beginPath();
-    ctx.roundRect(x, top, width, height, 3);
+    ctx.roundRect(0, top, selectWidth, height, 3);
     ctx.fill();
     ctx.stroke();
 
@@ -376,28 +408,49 @@ class ImageSelectorWidget {
     ctx.font = "12px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(fitText(ctx, this.value || "Select an image", width - 28), 8, top + height / 2);
+    ctx.fillText(fitText(ctx, this.value || "Select an image", selectWidth - 28), 8, top + height / 2);
 
     ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
     ctx.beginPath();
-    ctx.moveTo(width - 15, top + 9);
-    ctx.lineTo(width - 7, top + 9);
-    ctx.lineTo(width - 11, top + 15);
+    ctx.moveTo(selectWidth - 15, top + 9);
+    ctx.lineTo(selectWidth - 7, top + 9);
+    ctx.lineTo(selectWidth - 11, top + 15);
     ctx.closePath();
     ctx.fill();
+    drawCanvasButton(ctx, this.browseRect, "Upload");
     ctx.restore();
+  }
+
+  isBrowsePosition(x, y) {
+    const rect = this.browseRect;
+    return rect && x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
   mouse(event, pos, node) {
     if (event.type !== "pointerdown") {
       return false;
     }
+    if (this.isBrowsePosition(pos[0], pos[1])) {
+      this.openFileBrowser();
+      return true;
+    }
     showImagePicker(node, event);
     return true;
   }
 
   onClick(options) {
-    showImagePicker(this.node, options.e);
+    const event = options.e;
+    const x = event?.canvasX - this.node.pos[0];
+    const y = event?.canvasY - this.node.pos[1];
+    if (this.isBrowsePosition(x, y)) {
+      this.openFileBrowser();
+      return;
+    }
+    showImagePicker(this.node, event);
+  }
+
+  openFileBrowser() {
+    this.node.imageUploadInput?.click();
   }
 
   setDirty() {
@@ -426,6 +479,34 @@ function setupNode(node, nodeData) {
       redrawNode(node);
     };
     hideWidget(imageWidget);
+    const uploadWidget = getWidget(node, "upload");
+    if (uploadWidget) {
+      hideWidget(uploadWidget);
+    }
+    const uploadInput = document.createElement("input");
+    uploadInput.accept = "image/*,video/*";
+    uploadInput.type = "file";
+    uploadInput.style.position = "fixed";
+    uploadInput.style.left = "-10000px";
+    uploadInput.addEventListener("change", async () => {
+      const file = uploadInput.files?.[0];
+      uploadInput.value = "";
+      if (!file) {
+        return;
+      }
+      try {
+        await uploadImageFile(node, file);
+      } catch (error) {
+        console.error(error);
+      }
+    });
+    document.body.append(uploadInput);
+    node.imageUploadInput = uploadInput;
+    const originalOnRemoved = node.onRemoved;
+    node.onRemoved = function () {
+      uploadInput.remove();
+      originalOnRemoved?.apply(this, arguments);
+    };
     node.imageSelectorWidget = node.addCustomWidget(new ImageSelectorWidget(node));
     const size = node.computeSize();
     node.setSize([
