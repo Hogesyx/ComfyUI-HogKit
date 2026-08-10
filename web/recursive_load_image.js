@@ -3,7 +3,6 @@ import { app } from "../../scripts/app.js";
 const NODE_NAME = "HogKitLoadImage";
 const IMAGE_WIDGET = "image";
 const SELECTOR_WIDGET = "image_selector";
-const PREVIEW_HEIGHT = 160;
 let activePicker = null;
 
 function getInputOptions(nodeData) {
@@ -59,20 +58,34 @@ function imagePreviewUrl(image) {
   return `/view?${params.toString()}`;
 }
 
-function setSelectedImage(node, image) {
-  const inputWidget = node.imageInputWidget;
-  const previous = inputWidget?.value;
-  node.selectedImage = image;
-  if (node.imageSelectorWidget) {
-    node.imageSelectorWidget.setValue(image);
-  }
-  if (inputWidget) {
-    inputWidget.value = image;
-    inputWidget.callback?.call(inputWidget, image);
-    node.onWidgetChanged?.(IMAGE_WIDGET, image, previous, inputWidget);
-  }
+function redrawNode(node) {
   node.setDirtyCanvas?.(true, true);
-  app.graph?.setDirtyCanvas?.(true, true);
+  node.graph?.setDirtyCanvas?.(true, true);
+  app.canvas?.setDirty?.(true, true);
+}
+
+function setImageWidgetValue(node, image, event) {
+  const inputWidget = node.imageInputWidget;
+  if (!inputWidget) {
+    return;
+  }
+
+  if (typeof inputWidget.setValue === "function" && app.canvas) {
+    inputWidget.setValue(image, { e: event, node, canvas: app.canvas });
+    return;
+  }
+
+  const previous = inputWidget.value;
+  inputWidget.value = image;
+  inputWidget.callback?.call(inputWidget, image);
+  node.onWidgetChanged?.(IMAGE_WIDGET, image, previous, inputWidget);
+}
+
+function setSelectedImage(node, image, event) {
+  node.selectedImage = image;
+  node.imageSelectorWidget?.setValue(image);
+  setImageWidgetValue(node, image, event);
+  redrawNode(node);
 }
 
 function syncImageChoices(node) {
@@ -82,7 +95,10 @@ function syncImageChoices(node) {
   if (node.imageInputWidget) {
     node.imageInputWidget.options = node.imageInputWidget.options || {};
     node.imageInputWidget.options.values = files;
-    node.imageInputWidget.value = selected;
+    if (node.imageInputWidget.value !== selected) {
+      node.selectedImage = selected;
+      setImageWidgetValue(node, selected);
+    }
   }
   if (node.imageSelectorWidget) {
     node.imageSelectorWidget.setValue(selected);
@@ -327,27 +343,21 @@ class ImageSelectorWidget {
     this.serialize = false;
     this.node = node;
     this.value = node.selectedImage || "";
-    this.preview = new Image();
-    this.preview.onload = () => this.setDirty();
-    this.preview.onerror = () => this.setDirty();
-    this.loadPreview();
+    this.computeSize = this.computeSize.bind(this);
+    this.setValue = this.setValue.bind(this);
+    this.draw = this.draw.bind(this);
+    this.mouse = this.mouse.bind(this);
+    this.onClick = this.onClick.bind(this);
+    this.setDirty = this.setDirty.bind(this);
   }
 
   computeSize(width) {
-    return [width, 28 + PREVIEW_HEIGHT];
+    return [width, 28];
   }
 
   setValue(value) {
     this.value = value || "";
-    this.loadPreview();
-    this.node.setDirtyCanvas?.(true, true);
-  }
-
-  loadPreview() {
-    const source = this.value ? imagePreviewUrl(this.value) : "";
-    if (this.preview.src !== source) {
-      this.preview.src = source;
-    }
+    redrawNode(this.node);
   }
 
   draw(ctx, node, width, y) {
@@ -375,28 +385,6 @@ class ImageSelectorWidget {
     ctx.lineTo(width - 11, top + 15);
     ctx.closePath();
     ctx.fill();
-
-    const previewTop = top + height + 6;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
-    ctx.fillRect(0, previewTop, width, PREVIEW_HEIGHT);
-    if (this.preview.complete && this.preview.naturalWidth > 0) {
-      const scale = Math.min(width / this.preview.naturalWidth, PREVIEW_HEIGHT / this.preview.naturalHeight);
-      const previewWidth = this.preview.naturalWidth * scale;
-      const previewHeight = this.preview.naturalHeight * scale;
-      ctx.drawImage(
-        this.preview,
-        (width - previewWidth) / 2,
-        previewTop + (PREVIEW_HEIGHT - previewHeight) / 2,
-        previewWidth,
-        previewHeight,
-      );
-    } else if (!this.value) {
-      ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
-      ctx.font = "11px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("No image selected", width / 2, previewTop + PREVIEW_HEIGHT / 2);
-    }
     ctx.restore();
   }
 
@@ -408,9 +396,12 @@ class ImageSelectorWidget {
     return true;
   }
 
+  onClick(options) {
+    showImagePicker(this.node, options.e);
+  }
+
   setDirty() {
-    this.node.setDirtyCanvas?.(true, true);
-    app.graph?.setDirtyCanvas?.(true, true);
+    redrawNode(this.node);
   }
 }
 
@@ -432,11 +423,10 @@ function setupNode(node, nodeData) {
         node.selectedImage = value;
         node.imageSelectorWidget?.setValue(value);
       }
-      node.imageSelectorWidget?.setDirty?.();
+      redrawNode(node);
     };
     hideWidget(imageWidget);
-    node.imageSelectorWidget = new ImageSelectorWidget(node);
-    node.addCustomWidget(node.imageSelectorWidget);
+    node.imageSelectorWidget = node.addCustomWidget(new ImageSelectorWidget(node));
     const size = node.computeSize();
     node.setSize([
       Math.max(node.size?.[0] || 0, size[0]),
