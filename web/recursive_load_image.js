@@ -3,6 +3,7 @@ import { app } from "../../scripts/app.js";
 const NODE_NAME = "HogKitLoadImage";
 const IMAGE_WIDGET = "image";
 const SELECTOR_WIDGET = "image_selector";
+const PREVIEW_HEIGHT = 160;
 let activePicker = null;
 
 function getInputOptions(nodeData) {
@@ -59,12 +60,16 @@ function imagePreviewUrl(image) {
 }
 
 function setSelectedImage(node, image) {
+  const inputWidget = node.imageInputWidget;
+  const previous = inputWidget?.value;
   node.selectedImage = image;
   if (node.imageSelectorWidget) {
-    node.imageSelectorWidget.value = image;
+    node.imageSelectorWidget.setValue(image);
   }
-  if (node.imageInputWidget) {
-    node.imageInputWidget.value = image;
+  if (inputWidget) {
+    inputWidget.value = image;
+    inputWidget.callback?.call(inputWidget, image);
+    node.onWidgetChanged?.(IMAGE_WIDGET, image, previous, inputWidget);
   }
   node.setDirtyCanvas?.(true, true);
   app.graph?.setDirtyCanvas?.(true, true);
@@ -80,7 +85,7 @@ function syncImageChoices(node) {
     node.imageInputWidget.value = selected;
   }
   if (node.imageSelectorWidget) {
-    node.imageSelectorWidget.value = selected;
+    node.imageSelectorWidget.setValue(selected);
   }
   node.imageSelectorWidget?.setDirty?.();
 }
@@ -322,10 +327,27 @@ class ImageSelectorWidget {
     this.serialize = false;
     this.node = node;
     this.value = node.selectedImage || "";
+    this.preview = new Image();
+    this.preview.onload = () => this.setDirty();
+    this.preview.onerror = () => this.setDirty();
+    this.loadPreview();
   }
 
   computeSize(width) {
-    return [width, 28];
+    return [width, 28 + PREVIEW_HEIGHT];
+  }
+
+  setValue(value) {
+    this.value = value || "";
+    this.loadPreview();
+    this.node.setDirtyCanvas?.(true, true);
+  }
+
+  loadPreview() {
+    const source = this.value ? imagePreviewUrl(this.value) : "";
+    if (this.preview.src !== source) {
+      this.preview.src = source;
+    }
   }
 
   draw(ctx, node, width, y) {
@@ -353,6 +375,28 @@ class ImageSelectorWidget {
     ctx.lineTo(width - 11, top + 15);
     ctx.closePath();
     ctx.fill();
+
+    const previewTop = top + height + 6;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+    ctx.fillRect(0, previewTop, width, PREVIEW_HEIGHT);
+    if (this.preview.complete && this.preview.naturalWidth > 0) {
+      const scale = Math.min(width / this.preview.naturalWidth, PREVIEW_HEIGHT / this.preview.naturalHeight);
+      const previewWidth = this.preview.naturalWidth * scale;
+      const previewHeight = this.preview.naturalHeight * scale;
+      ctx.drawImage(
+        this.preview,
+        (width - previewWidth) / 2,
+        previewTop + (PREVIEW_HEIGHT - previewHeight) / 2,
+        previewWidth,
+        previewHeight,
+      );
+    } else if (!this.value) {
+      ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
+      ctx.font = "11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("No image selected", width / 2, previewTop + PREVIEW_HEIGHT / 2);
+    }
     ctx.restore();
   }
 
@@ -366,6 +410,7 @@ class ImageSelectorWidget {
 
   setDirty() {
     this.node.setDirtyCanvas?.(true, true);
+    app.graph?.setDirtyCanvas?.(true, true);
   }
 }
 
@@ -380,9 +425,23 @@ function setupNode(node, nodeData) {
     node.imageInputWidget = imageWidget;
     node.selectedImage = imageWidget.value || "";
     imageWidget.serializeValue = () => node.selectedImage || "";
+    const originalCallback = imageWidget.callback;
+    imageWidget.callback = function (value) {
+      originalCallback?.apply(this, arguments);
+      if (typeof value === "string" && value !== node.selectedImage) {
+        node.selectedImage = value;
+        node.imageSelectorWidget?.setValue(value);
+      }
+      node.imageSelectorWidget?.setDirty?.();
+    };
     hideWidget(imageWidget);
     node.imageSelectorWidget = new ImageSelectorWidget(node);
     node.addCustomWidget(node.imageSelectorWidget);
+    const size = node.computeSize();
+    node.setSize([
+      Math.max(node.size?.[0] || 0, size[0]),
+      Math.max(node.size?.[1] || 0, size[1]),
+    ]);
   }
   syncImageChoices(node);
 }

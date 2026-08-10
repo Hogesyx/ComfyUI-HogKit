@@ -201,6 +201,7 @@ class RecursiveLoadImage(io.ComfyNode):
                 io.Combo.Input(
                     "image",
                     options=image_files,
+                    upload=io.UploadType.image,
                     tooltip="Select an image from the input directory or one of its immediate subfolders.",
                     extra_dict={"image_choices": image_choices},
                 ),
