@@ -105,16 +105,18 @@ app.registerExtension({
     nodeType.prototype.nodeStatusPatched = true;
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
-      originalOnNodeCreated?.apply(this, arguments);
+      const result = originalOnNodeCreated?.apply(this, arguments);
       ensureTargetInput(this);
       setupStatusWidget(this);
+      return result;
     };
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
-      originalOnConfigure?.apply(this, arguments);
+      const result = originalOnConfigure?.apply(this, arguments);
       ensureTargetInput(this);
       setupStatusWidget(this);
+      return result;
     };
   },
 

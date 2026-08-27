@@ -1,7 +1,8 @@
 from .lora_nodes import (
-    LoraChainLoaderWithMetadata,
+    LoraDualChainLoaderWithMetadata,
     LoraLoaderWithPrompt,
     LoraLoaderWithPromptSingle,
+    LoraSingleChainLoaderWithMetadata,
 )
 from .image_nodes import AutoResolutionSelector, QwenImageScaler, RecursiveLoadImage
 from .utility_nodes import (
@@ -22,7 +23,8 @@ class PluginExtension(ComfyExtension):
         return [
             LoraLoaderWithPrompt,
             LoraLoaderWithPromptSingle,
-            LoraChainLoaderWithMetadata,
+            LoraSingleChainLoaderWithMetadata,
+            LoraDualChainLoaderWithMetadata,
             RecursiveLoadImage,
             AutoResolutionSelector,
             QwenImageScaler,

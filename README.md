@@ -9,6 +9,15 @@ ComfyUI custom nodes for LoRA workflows, image sizing, and workflow utilities.
 
 This project is a breaking-change project. Older HogKit node IDs and workflow layouts are not kept as compatibility aliases.
 
+## Breaking change in 0.2.0
+
+The former `HogKitLoraChainLoaderWithMetadata` node has been replaced by two purpose-specific nodes:
+
+- `HogKitLoraSingleChainLoaderWithMetadata` for one model/CLIP pipeline and one LoRA per row.
+- `HogKitLoraDualChainLoaderWithMetadata` for two model/CLIP pipelines and paired LoRAs per row.
+
+Workflows containing the former chain-loader node must replace it with the appropriate new node. The metadata sidecar format is unchanged, so existing `.metadata.json` files continue to work.
+
 ## Installation
 
 Clone the repository into ComfyUI's `custom_nodes` directory:
@@ -26,7 +35,8 @@ Restart ComfyUI after installation or after updating the plugin.
 
 - **HogKit LoRA Dual Loader with Prompt** applies up to two LoRAs and appends an optional prompt fragment.
 - **HogKit LoRA Single Loader with Prompt** is the single-model/single-CLIP version.
-- **HogKit LoRA Chain Loader with Metadata** applies a configurable LoRA stack and combines prompt fragments from metadata.
+- **HogKit LoRA Single Chain Loader with Metadata** applies a configurable LoRA stack to one model and optional CLIP.
+- **HogKit LoRA Dual Chain Loader with Metadata** applies paired LoRA stacks to two model/CLIP pipelines and combines prompt fragments from metadata.
 
 The chain loader stores metadata beside each LoRA. For example:
 

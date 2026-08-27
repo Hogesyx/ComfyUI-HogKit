@@ -59,6 +59,9 @@ function imagePreviewUrl(image) {
 }
 
 function redrawNode(node) {
+  for (const widget of node.widgets || []) {
+    widget.triggerDraw?.();
+  }
   node.setDirtyCanvas?.(true, true);
   node.graph?.setDirtyCanvas?.(true, true);
   app.canvas?.setDirty?.(true, true);
@@ -528,14 +531,16 @@ app.registerExtension({
     nodeType.prototype.recursiveLoadImagePatched = true;
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
-      originalOnNodeCreated?.apply(this, arguments);
+      const result = originalOnNodeCreated?.apply(this, arguments);
       setupNode(this, nodeData);
+      return result;
     };
 
     const originalConfigure = nodeType.prototype.configure;
     nodeType.prototype.configure = function () {
-      originalConfigure?.apply(this, arguments);
+      const result = originalConfigure?.apply(this, arguments);
       setupNode(this, nodeData);
+      return result;
     };
   },
 });

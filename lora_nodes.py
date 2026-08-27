@@ -173,7 +173,104 @@ def write_lora_metadata(metadata_path, metadata):
         metadata_file.write("\n")
 
 
-class LoraChainLoaderWithMetadata(io.ComfyNode):
+class _LoraChainSupport:
+    @classmethod
+    def _apply_lora_side(
+        cls,
+        loader,
+        model,
+        clip,
+        lora_name,
+        positive_parts,
+        negative_parts,
+    ):
+        metadata, _ = load_or_create_lora_metadata(lora_name)
+        strength = cls._coerce_float(metadata.get("strength"), 1.0)
+
+        if strength != 0.0:
+            clip_strength = strength if clip is not None else 0.0
+            model, clip = loader.load_lora(model, clip, lora_name, strength, clip_strength)
+
+        cls._append_prompt_part(positive_parts, metadata.get("positive_prompt"))
+        cls._append_prompt_part(negative_parts, metadata.get("negative_prompt"))
+        return model, clip
+
+    @staticmethod
+    def _parse_lora_stack_config(lora_stack):
+        default_config = {
+            "rows": [],
+            "delimiter": ", ",
+            "exclusive": False,
+        }
+
+        if not isinstance(lora_stack, str) or not lora_stack.strip():
+            return default_config
+
+        try:
+            parsed = json.loads(lora_stack)
+        except json.JSONDecodeError as exc:
+            print(f"[HogKit LoRA Chain] Invalid lora_stack JSON: {exc}")
+            return default_config
+
+        if not isinstance(parsed, dict):
+            return default_config
+
+        rows = parsed.get("rows", [])
+        delimiter = parsed.get("delimiter", ", ")
+        default_config["rows"] = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+        default_config["delimiter"] = delimiter if isinstance(delimiter, str) else ", "
+        default_config["exclusive"] = bool(parsed.get("exclusive", False))
+        return default_config
+
+    @staticmethod
+    def _append_prompt_part(parts, value):
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+
+    @staticmethod
+    def _coerce_float(value, fallback):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    @staticmethod
+    def _apply_select_row(stack_config, select_row):
+        rows = stack_config.get("rows", [])
+        if not rows:
+            return False
+        try:
+            select_value = int(select_row)
+        except (TypeError, ValueError):
+            return False
+
+        if select_value == 0:
+            return False
+        if select_value == -1:
+            row_index = random.randint(0, len(rows) - 1)
+        else:
+            row_index = select_value - 1
+
+        if row_index < 0 or row_index >= len(rows):
+            return False
+
+        rows[row_index]["enabled"] = True
+        if stack_config.get("exclusive", False):
+            for index, row in enumerate(rows):
+                if index != row_index:
+                    row["enabled"] = False
+        return True
+
+    @staticmethod
+    def _serialize_stack_config(stack_config):
+        return json.dumps({
+            "rows": stack_config.get("rows", []),
+            "delimiter": stack_config.get("delimiter", ", "),
+            "exclusive": bool(stack_config.get("exclusive", False)),
+        }, ensure_ascii=False)
+
+
+class LoraDualChainLoaderWithMetadata(_LoraChainSupport, io.ComfyNode):
     """
     Applies multiple LoRAs in order and keeps a sidecar metadata JSON next to each LoRA.
 
@@ -184,8 +281,8 @@ class LoraChainLoaderWithMetadata(io.ComfyNode):
     def define_schema(cls):
         loras = ["None"] + folder_paths.get_filename_list("loras")
         return io.Schema(
-            node_id="HogKitLoraChainLoaderWithMetadata",
-            display_name="HogKit LoRA Chain Loader with Metadata",
+            node_id="HogKitLoraDualChainLoaderWithMetadata",
+            display_name="HogKit LoRA Dual Chain Loader with Metadata",
             category="HogKit",
             inputs=[
                 io.Model.Input("model_1"),
@@ -334,53 +431,6 @@ class LoraChainLoaderWithMetadata(io.ComfyNode):
         return io.NodeOutput(*result)
 
     @staticmethod
-    def _apply_lora_side(
-        loader,
-        model,
-        clip,
-        lora_name,
-        positive_parts,
-        negative_parts,
-    ):
-        metadata, _ = load_or_create_lora_metadata(lora_name)
-        strength = LoraChainLoaderWithMetadata._coerce_float(metadata.get("strength"), 1.0)
-
-        if strength != 0.0:
-            clip_strength = strength if clip is not None else 0.0
-            model, clip = loader.load_lora(model, clip, lora_name, strength, clip_strength)
-
-        LoraChainLoaderWithMetadata._append_prompt_part(positive_parts, metadata.get("positive_prompt"))
-        LoraChainLoaderWithMetadata._append_prompt_part(negative_parts, metadata.get("negative_prompt"))
-        return model, clip
-
-    @staticmethod
-    def _parse_lora_stack_config(lora_stack):
-        default_config = {
-            "rows": [],
-            "delimiter": ", ",
-            "exclusive": False,
-        }
-
-        if not isinstance(lora_stack, str) or not lora_stack.strip():
-            return default_config
-
-        try:
-            parsed = json.loads(lora_stack)
-        except json.JSONDecodeError as exc:
-            print(f"[LoraChainLoaderWithMetadata] Invalid lora_stack JSON: {exc}")
-            return default_config
-
-        if not isinstance(parsed, dict):
-            return default_config
-
-        rows = parsed.get("rows", [])
-        delimiter = parsed.get("delimiter", ", ")
-        default_config["rows"] = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-        default_config["delimiter"] = delimiter if isinstance(delimiter, str) else ", "
-        default_config["exclusive"] = bool(parsed.get("exclusive", False))
-        return default_config
-
-    @staticmethod
     def _iter_enabled_lora_names(row):
         lora_name = row.get("lora_1", "None")
         if row.get("lora_1_enabled", True) and lora_name != "None":
@@ -390,54 +440,134 @@ class LoraChainLoaderWithMetadata(io.ComfyNode):
         if row.get("lora_2_enabled", False) and lora_2_name != "None":
             yield "2", lora_2_name
 
-    @staticmethod
-    def _append_prompt_part(parts, value):
-        if isinstance(value, str) and value.strip():
-            parts.append(value.strip())
+
+class LoraSingleChainLoaderWithMetadata(_LoraChainSupport, io.ComfyNode):
+    """Applies a metadata-backed LoRA chain to one model and optional CLIP."""
+
+    @classmethod
+    def define_schema(cls):
+        loras = ["None"] + folder_paths.get_filename_list("loras")
+        return io.Schema(
+            node_id="HogKitLoraSingleChainLoaderWithMetadata",
+            display_name="HogKit LoRA Single Chain Loader with Metadata",
+            category="HogKit",
+            inputs=[
+                io.Model.Input("model"),
+                io.Clip.Input("clip", optional=True),
+                io.String.Input("positive_input", optional=True, force_input=True, default=""),
+                io.String.Input("negative_input", optional=True, force_input=True, default=""),
+                io.Int.Input("select_row", optional=True, default=0, min=-1),
+                io.String.Input(
+                    "lora_stack",
+                    optional=True,
+                    default='{"rows":[],"delimiter":", ","exclusive":false}',
+                    extra_dict={"lora_choices": loras},
+                ),
+            ],
+            outputs=[
+                io.Model.Output("model", display_name="MODEL"),
+                io.Clip.Output("clip", display_name="CLIP"),
+                io.String.Output("positive", display_name="positive"),
+                io.String.Output("negative", display_name="negative"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(
+        cls,
+        model,
+        clip=None,
+        positive_input="",
+        negative_input="",
+        select_row=0,
+        lora_stack='{"rows":[],"delimiter":", ","exclusive":false}',
+        **kwargs,
+    ):
+        stack_config = cls._parse_lora_stack_config(lora_stack)
+        metadata_state = {
+            "lora_stack": lora_stack,
+            "positive_input": positive_input,
+            "negative_input": negative_input,
+            "select_row": select_row,
+            "metadata_files": [],
+        }
+        found_enabled = False
+        for row in stack_config["rows"]:
+            if not row.get("enabled", True):
+                continue
+            if stack_config["exclusive"] and found_enabled:
+                continue
+            lora_names = list(cls._iter_enabled_lora_names(row))
+            if not lora_names:
+                continue
+            found_enabled = True
+            for role, lora_name in lora_names:
+                metadata_path = metadata_path_for_lora_name(lora_name)
+                if metadata_path and os.path.exists(metadata_path):
+                    stat = os.stat(metadata_path)
+                    metadata_state["metadata_files"].append(
+                        (role, lora_name, stat.st_mtime_ns, stat.st_size)
+                    )
+                else:
+                    metadata_state["metadata_files"].append((role, lora_name, None, None))
+        return json.dumps(metadata_state, ensure_ascii=False)
+
+    @classmethod
+    def execute(
+        cls,
+        model,
+        clip=None,
+        positive_input="",
+        negative_input="",
+        select_row=0,
+        lora_stack='{"rows":[],"delimiter":", ","exclusive":false}',
+        **kwargs,
+    ):
+        stack_config = cls._parse_lora_stack_config(lora_stack)
+        select_row_applied = cls._apply_select_row(stack_config, select_row)
+        delimiter = stack_config["delimiter"]
+        positive_parts = [positive_input.strip()] if positive_input and positive_input.strip() else []
+        negative_parts = [negative_input.strip()] if negative_input and negative_input.strip() else []
+        loader = LoraLoader()
+        found_enabled = False
+
+        for lora_row in stack_config["rows"]:
+            if not lora_row.get("enabled", True):
+                continue
+            if stack_config["exclusive"] and found_enabled:
+                continue
+
+            lora_name = lora_row.get("lora_1", "None")
+            if not lora_row.get("lora_1_enabled", True) or lora_name == "None":
+                continue
+            found_enabled = True
+            model, clip = cls._apply_lora_side(
+                loader,
+                model,
+                clip,
+                lora_name,
+                positive_parts,
+                negative_parts,
+            )
+
+        result = (
+            model,
+            clip,
+            delimiter.join(positive_parts),
+            delimiter.join(negative_parts),
+        )
+        if select_row_applied:
+            return io.NodeOutput(
+                *result,
+                ui={"lora_stack_sync": [cls._serialize_stack_config(stack_config)]},
+            )
+        return io.NodeOutput(*result)
 
     @staticmethod
-    def _coerce_float(value, fallback):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return fallback
-
-    @staticmethod
-    def _apply_select_row(stack_config, select_row):
-        rows = stack_config.get("rows", [])
-        if not rows:
-            return False
-        try:
-            select_value = int(select_row)
-        except (TypeError, ValueError):
-            return False
-
-        # 0 disables external row selection override for this run.
-        if select_value == 0:
-            return False
-        # -1 picks a random row from the current list.
-        if select_value == -1:
-            row_index = random.randint(0, len(rows) - 1)
-        else:
-            row_index = select_value - 1
-
-        if row_index < 0 or row_index >= len(rows):
-            return False
-
-        rows[row_index]["enabled"] = True
-        if stack_config.get("exclusive", False):
-            for index, row in enumerate(rows):
-                if index != row_index:
-                    row["enabled"] = False
-        return True
-
-    @staticmethod
-    def _serialize_stack_config(stack_config):
-        return json.dumps({
-            "rows": stack_config.get("rows", []),
-            "delimiter": stack_config.get("delimiter", ", "),
-            "exclusive": bool(stack_config.get("exclusive", False)),
-        }, ensure_ascii=False)
+    def _iter_enabled_lora_names(row):
+        lora_name = row.get("lora_1", "None")
+        if row.get("lora_1_enabled", True) and lora_name != "None":
+            yield "1", lora_name
 
 
 @PromptServer.instance.routes.get("/lora/metadata")

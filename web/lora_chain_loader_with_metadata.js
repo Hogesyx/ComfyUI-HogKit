@@ -1,7 +1,19 @@
 import { app } from "../../scripts/app.js";
 
-const NODE_NAME = "HogKitLoraChainLoaderWithMetadata";
+const NODE_CONFIGS = {
+  HogKitLoraSingleChainLoaderWithMetadata: { dual: false, minWidth: 440 },
+  HogKitLoraDualChainLoaderWithMetadata: { dual: true, minWidth: 640 },
+};
 const ROW_HEIGHT = 78;
+
+function redrawNode(node) {
+  for (const widget of node.widgets || []) {
+    widget.triggerDraw?.();
+  }
+  node.setDirtyCanvas?.(true, true);
+  node.graph?.setDirtyCanvas?.(true, true);
+  app.canvas?.setDirty?.(true, true);
+}
 
 function getLoraChoices(nodeData) {
   const input = nodeData?.input?.optional?.lora_stack;
@@ -73,6 +85,10 @@ function serializeStack(node) {
     const serialized = { ...row };
     delete serialized.strength_1;
     delete serialized.strength_2;
+    if (!node.isDualChain) {
+      delete serialized.lora_2;
+      delete serialized.lora_2_enabled;
+    }
     return serialized;
   });
   return JSON.stringify({
@@ -577,19 +593,19 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
   render();
 }
 
-function activeMetadataRoles(row) {
+function activeMetadataRoles(row, dual) {
   const roles = [];
   if (row.lora_1 && row.lora_1 !== "None") {
     roles.push("1");
   }
-  if (row.lora_2 && row.lora_2 !== "None") {
+  if (dual && row.lora_2 && row.lora_2 !== "None") {
     roles.push("2");
   }
   return roles;
 }
 
 async function showMetadataEditor(row, node) {
-  const roles = activeMetadataRoles(row);
+  const roles = activeMetadataRoles(row, node.isDualChain);
   if (!roles.length) {
     showError("Select a LoRA before editing metadata.");
     return;
@@ -727,7 +743,7 @@ async function showSingleMetadataEditor(row, node, role = "1") {
       }
       status.textContent = "Saved.";
       node.rebuildWidgets?.();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
       close();
     } catch (error) {
       status.textContent = error.message;
@@ -956,7 +972,7 @@ async function showDualMetadataEditor(row, node) {
       row.metadataName2 = next2.name || "";
       status.textContent = "Saved.";
       node.rebuildWidgets?.();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
       close();
     } catch (error) {
       status.textContent = error.message;
@@ -987,7 +1003,9 @@ class LoraRowWidget {
     this.preview1 = "";
     this.preview2 = "";
     this.loadPreview("1");
-    this.loadPreview("2");
+    if (node.isDualChain) {
+      this.loadPreview("2");
+    }
   }
 
   computeSize(width) {
@@ -1029,12 +1047,16 @@ class LoraRowWidget {
     const removeRect = { x: rowX + rowW - controlSize - 6, y: rowY + 24, w: controlSize, h: controlSize };
     const editRect = { x: removeRect.x - controlSize - gap, y: rowY + 24, w: controlSize, h: controlSize };
     const panelGap = 8;
-    const panelW = Math.max(120, (editRect.x - x - panelGap * 2) / 2);
+    const panelW = node.isDualChain
+      ? Math.max(120, (editRect.x - x - panelGap * 2) / 2)
+      : Math.max(120, editRect.x - x - panelGap);
     const panel1 = { x, y: rowY + 7, w: panelW, h: rowH - 14 };
-    const panel2 = { x: x + panelW + panelGap, y: rowY + 7, w: panelW, h: rowH - 14 };
 
     this.drawSlot(ctx, panel1, "1", this.row.lora_1_enabled !== false);
-    this.drawSlot(ctx, panel2, "2", this.row.lora_2_enabled !== false);
+    if (node.isDualChain) {
+      const panel2 = { x: x + panelW + panelGap, y: rowY + 7, w: panelW, h: rowH - 14 };
+      this.drawSlot(ctx, panel2, "2", this.row.lora_2_enabled !== false);
+    }
 
     this.hitAreas.edit = editRect;
     this.hitAreas.remove = removeRect;
@@ -1083,7 +1105,8 @@ class LoraRowWidget {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.font = "12px sans-serif";
-    ctx.fillText(fitText(ctx, `${role}: ${rowDisplayName(this.row, role)}`, loraRect.w), loraRect.x, loraRect.y + loraRect.h / 2);
+    const rolePrefix = this.node.isDualChain ? `${role}: ` : "";
+    ctx.fillText(fitText(ctx, `${rolePrefix}${rowDisplayName(this.row, role)}`, loraRect.w), loraRect.x, loraRect.y + loraRect.h / 2);
 
     const preview = (role === "2" ? this.preview2 : this.preview1) || "metadata prompt will be appended";
     ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR;
@@ -1141,31 +1164,31 @@ class LoraRowWidget {
       }
       this.row.enabled = nextEnabled;
       node.updateStackWidget();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
       return true;
     }
     if (hit(pos, this.hitAreas.toggle2)) {
       if (!this.row.lora_2 || this.row.lora_2 === "None") {
         this.row.lora_2_enabled = false;
         node.updateStackWidget();
-        node.setDirtyCanvas(true, true);
+        redrawNode(node);
         return true;
       }
       this.row.lora_2_enabled = this.row.lora_2_enabled === false;
       node.updateStackWidget();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
       return true;
     }
     if (hit(pos, this.hitAreas.toggle1)) {
       if (!this.row.lora_1 || this.row.lora_1 === "None") {
         this.row.lora_1_enabled = false;
         node.updateStackWidget();
-        node.setDirtyCanvas(true, true);
+        redrawNode(node);
         return true;
       }
       this.row.lora_1_enabled = this.row.lora_1_enabled === false;
       node.updateStackWidget();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
       return true;
     }
     if (hit(pos, this.hitAreas.lora1)) {
@@ -1209,12 +1232,12 @@ class LoraRowWidget {
               } else {
                 this.preview1 = metadataSummary(metadata);
               }
-              node.setDirtyCanvas(true, true);
+              redrawNode(node);
             })
             .catch((error) => {
               showError(error.message);
             });
-          node.setDirtyCanvas(true, true);
+          redrawNode(node);
         }
       }, event);
   }
@@ -1224,7 +1247,7 @@ class LoraRowWidget {
       if (role === "2") {
         this.row.lora_2 = lora;
         this.row.lora_2_enabled = lora !== "None";
-        const pair = findLoraPair(lora, node.loraChoices || []);
+        const pair = node.isDualChain ? findLoraPair(lora, node.loraChoices || []) : null;
         if (pair && (!this.row.lora_1 || this.row.lora_1 === "None")) {
           if (confirm(`Found likely LoRA 1 pair:\n${pair}\n\nLoad it into slot 1?`)) {
             this.row.lora_1 = pair;
@@ -1234,7 +1257,7 @@ class LoraRowWidget {
       } else {
         this.row.lora_1 = lora;
         this.row.lora_1_enabled = lora !== "None";
-        const pair = findLoraPair(lora, node.loraChoices || []);
+        const pair = node.isDualChain ? findLoraPair(lora, node.loraChoices || []) : null;
         if (pair && (!this.row.lora_2 || this.row.lora_2 === "None")) {
           if (confirm(`Found likely LoRA 2 pair:\n${pair}\n\nLoad it into slot 2?`)) {
             this.row.lora_2 = pair;
@@ -1246,7 +1269,7 @@ class LoraRowWidget {
       normalizeRow(this.row);
       this.loadPreview(role);
       node.updateStackWidget();
-      node.setDirtyCanvas(true, true);
+      redrawNode(node);
     }, loraForRole(this.row, role) || "None");
   }
 
@@ -1277,7 +1300,7 @@ class LoraRowWidget {
         this.row.metadataName1 = payload.metadata?.name || "";
         this.preview1 = metadataSummary(payload.metadata);
       }
-      this.node.setDirtyCanvas(true, true);
+      redrawNode(this.node);
     } catch {
       if (role === "2") {
         this.preview2 = "";
@@ -1346,7 +1369,7 @@ class LoraSettingsWidget {
         if (value != null) {
           node.delimiter = value;
           node.updateStackWidget();
-          node.setDirtyCanvas(true, true);
+          redrawNode(node);
         }
       }, event);
       return true;
@@ -1377,15 +1400,20 @@ app.registerExtension({
   name: "LoraChainLoaderWithMetadata",
 
   beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData.name !== NODE_NAME) {
+    const nodeConfig = NODE_CONFIGS[nodeData.name];
+    if (!nodeConfig || nodeType.prototype.loraChainMetadataPatched) {
       return;
     }
 
+    nodeType.prototype.loraChainMetadataPatched = true;
+
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
-      originalOnNodeCreated?.apply(this, arguments);
+      const result = originalOnNodeCreated?.apply(this, arguments);
 
       this.loraChoices = getLoraChoices(nodeData);
+      this.isDualChain = nodeConfig.dual;
+      this.loraChainMinWidth = nodeConfig.minWidth;
       this.rows = [];
 
       const stackWidget = this.widgets?.find((widget) => widget.name === "lora_stack");
@@ -1400,11 +1428,12 @@ app.registerExtension({
       }
 
       this.rebuildWidgets();
+      return result;
     };
 
     const originalConfigure = nodeType.prototype.configure;
     nodeType.prototype.configure = function (info) {
-      originalConfigure?.apply(this, arguments);
+      const result = originalConfigure?.apply(this, arguments);
       const stackIndex = this.widgets?.findIndex((widget) => widget.name === "lora_stack");
       const stackValue = info?.widgets_values?.lora_stack ?? info?.widgets_values?.[stackIndex];
       if (stackValue !== undefined) {
@@ -1417,6 +1446,7 @@ app.registerExtension({
         this.stackWidget.value = serializeStack(this);
       }
       this.rebuildWidgets?.();
+      return result;
     };
 
     nodeType.prototype.removeRowWidgets = function () {
@@ -1424,8 +1454,14 @@ app.registerExtension({
         return;
       }
       for (let index = this.widgets.length - 1; index >= 0; index -= 1) {
-        if (this.widgets[index].loraRowWidget) {
-          this.widgets.splice(index, 1);
+        const widget = this.widgets[index];
+        if (widget.loraDynamicWidget) {
+          if (typeof this.removeWidget === "function") {
+            this.removeWidget(widget);
+          } else {
+            widget.onRemove?.();
+            this.widgets.splice(index, 1);
+          }
         }
       }
     };
@@ -1437,26 +1473,29 @@ app.registerExtension({
       this.removeRowWidgets();
       this.removeEnableInputs();
 
-      const addButton = this.addWidget("button", "+ Add LoRA", null, () => {
-        if (this.exclusive) {
-          for (const row of this.rows) {
-            row.enabled = false;
+      let addButton = this.widgets?.find((widget) => widget.loraAddWidget);
+      if (!addButton) {
+        addButton = this.addWidget("button", "+ Add LoRA", null, () => {
+          if (this.exclusive) {
+            for (const row of this.rows) {
+              row.enabled = false;
+            }
           }
-        }
-        this.rows.push(makeRow("None"));
-        this.rebuildWidgets();
-      });
-      addButton.loraRowWidget = true;
-      addButton.serialize = false;
+          this.rows.push(makeRow("None"));
+          this.rebuildWidgets();
+        });
+        addButton.loraAddWidget = true;
+        addButton.serialize = false;
+      }
 
       this.rows.forEach((row, rowIndex) => {
         const widget = new LoraRowWidget(this, row, rowIndex);
-        widget.loraRowWidget = true;
+        widget.loraDynamicWidget = true;
         this.addCustomWidget(widget);
       });
 
       const settingsWidget = new LoraSettingsWidget(this);
-      settingsWidget.loraRowWidget = true;
+      settingsWidget.loraDynamicWidget = true;
       this.addCustomWidget(settingsWidget);
 
       if (this.stackWidget) {
@@ -1464,11 +1503,16 @@ app.registerExtension({
       }
 
       const computed = this.computeSize();
-      this.size = [
-        Math.max(this.size?.[0] || 0, computed[0], 640),
+      const nextSize = [
+        Math.max(this.size?.[0] || 0, computed[0], this.loraChainMinWidth),
         Math.max(computed[1], 120),
       ];
-      this.setDirtyCanvas(true, true);
+      if (typeof this.setSize === "function") {
+        this.setSize(nextSize);
+      } else {
+        this.size = nextSize;
+      }
+      redrawNode(this);
     };
 
     nodeType.prototype.updateStackWidget = function () {
@@ -1491,10 +1535,10 @@ app.registerExtension({
 
     const originalOnExecuted = nodeType.prototype.onExecuted;
     nodeType.prototype.onExecuted = function (message) {
-      originalOnExecuted?.apply(this, arguments);
+      const result = originalOnExecuted?.apply(this, arguments);
       const syncedStack = message?.lora_stack_sync?.[0] ?? message?.ui?.lora_stack_sync?.[0];
       if (typeof syncedStack !== "string" || !syncedStack.trim()) {
-        return;
+        return result;
       }
       const stack = parseStack(syncedStack);
       this.rows = stack.rows;
@@ -1504,6 +1548,7 @@ app.registerExtension({
         this.stackWidget.value = syncedStack;
       }
       this.rebuildWidgets?.();
+      return result;
     };
 
   },

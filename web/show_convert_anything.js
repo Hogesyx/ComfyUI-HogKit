@@ -193,14 +193,16 @@ app.registerExtension({
 
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
-      originalOnNodeCreated?.apply(this, arguments);
+      const result = originalOnNodeCreated?.apply(this, arguments);
       ensureRows(this);
+      return result;
     };
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
-      originalOnConfigure?.apply(this, arguments);
+      const result = originalOnConfigure?.apply(this, arguments);
       ensureRows(this);
+      return result;
     };
 
     const originalOnConnectionsChange = nodeType.prototype.onConnectionsChange;
@@ -212,8 +214,9 @@ app.registerExtension({
 
     const originalOnExecuted = nodeType.prototype.onExecuted;
     nodeType.prototype.onExecuted = function (message) {
-      originalOnExecuted?.apply(this, arguments);
+      const result = originalOnExecuted?.apply(this, arguments);
       updateDisplay(this, message?.text);
+      return result;
     };
   },
 });
