@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2
+
+### Added
+
+- Added a full, scrollable notes preview when hovering over a LoRA panel with valid non-empty metadata notes.
+- Added hover support for the single-chain panel and both panels of the dual-chain loader in classic and Nodes 2.0 renderers.
+
+### Fixed
+
+- Fixed newly added chain rows not visually updating after selecting a LoRA in Nodes 2.0.
+- Assigned unique identities to rebuilt custom widgets so the Vue renderer cannot remain bound to stale row instances.
+- Made the active row repaint itself directly after LoRA selection, metadata loading, toggles, and strength changes.
+
 ## 0.2.1
 
 ### Fixed

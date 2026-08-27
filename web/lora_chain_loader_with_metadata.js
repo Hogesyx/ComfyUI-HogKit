@@ -5,6 +5,79 @@ const NODE_CONFIGS = {
   HogKitLoraDualChainLoaderWithMetadata: { dual: true, minWidth: 640 },
 };
 const ROW_HEIGHT = 78;
+let notesTooltip = null;
+let notesTooltipHideTimer = null;
+
+function cancelNotesTooltipHide() {
+  if (notesTooltipHideTimer !== null) {
+    window.clearTimeout(notesTooltipHideTimer);
+    notesTooltipHideTimer = null;
+  }
+}
+
+function hideNotesTooltip() {
+  cancelNotesTooltipHide();
+  notesTooltip?.remove();
+  notesTooltip = null;
+}
+
+function scheduleNotesTooltipHide() {
+  cancelNotesTooltipHide();
+  notesTooltipHideTimer = window.setTimeout(hideNotesTooltip, 120);
+}
+
+function showNotesTooltip(title, notes, event) {
+  const content = typeof notes === "string" ? notes.trim() : "";
+  if (!content) {
+    scheduleNotesTooltipHide();
+    return false;
+  }
+
+  cancelNotesTooltipHide();
+  if (!notesTooltip) {
+    notesTooltip = document.createElement("div");
+    notesTooltip.style.position = "fixed";
+    notesTooltip.style.zIndex = "10001";
+    notesTooltip.style.width = "min(520px, calc(100vw - 24px))";
+    notesTooltip.style.maxHeight = "min(520px, calc(100vh - 24px))";
+    notesTooltip.style.overflow = "auto";
+    notesTooltip.style.padding = "10px 12px";
+    notesTooltip.style.border = `1px solid ${LiteGraph.WIDGET_OUTLINE_COLOR || "#666"}`;
+    notesTooltip.style.borderRadius = "6px";
+    notesTooltip.style.background = "rgba(24, 24, 24, 0.98)";
+    notesTooltip.style.boxShadow = "0 8px 28px rgba(0, 0, 0, 0.55)";
+    notesTooltip.style.color = LiteGraph.WIDGET_TEXT_COLOR || "#eee";
+    notesTooltip.style.font = "12px/1.45 sans-serif";
+    notesTooltip.style.whiteSpace = "pre-wrap";
+    notesTooltip.style.overflowWrap = "anywhere";
+    notesTooltip.addEventListener("pointerenter", cancelNotesTooltipHide);
+    notesTooltip.addEventListener("pointerleave", scheduleNotesTooltipHide);
+    document.body.append(notesTooltip);
+  }
+
+  notesTooltip.replaceChildren();
+  const heading = document.createElement("div");
+  heading.textContent = title || "LoRA notes";
+  heading.style.marginBottom = "6px";
+  heading.style.fontWeight = "600";
+  heading.style.color = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#bbb";
+  const body = document.createElement("div");
+  body.textContent = content;
+  notesTooltip.append(heading, body);
+
+  const clientX = Number.isFinite(event?.clientX) ? event.clientX : window.innerWidth / 2;
+  const clientY = Number.isFinite(event?.clientY) ? event.clientY : window.innerHeight / 2;
+  notesTooltip.style.left = "0px";
+  notesTooltip.style.top = "0px";
+  const bounds = notesTooltip.getBoundingClientRect();
+  const left = clientX + 14 + bounds.width <= window.innerWidth - 8
+    ? clientX + 14
+    : Math.max(8, clientX - bounds.width - 14);
+  const top = Math.min(clientY + 14, Math.max(8, window.innerHeight - bounds.height - 8));
+  notesTooltip.style.left = `${left}px`;
+  notesTooltip.style.top = `${top}px`;
+  return true;
+}
 
 function redrawNode(node) {
   for (const widget of node.widgets || []) {
@@ -180,7 +253,7 @@ function drawGreenPillToggle(ctx, rect, enabled) {
 }
 
 function hit(pos, rect) {
-  if (!rect) {
+  if (!pos || !rect) {
     return false;
   }
   return (
@@ -995,9 +1068,9 @@ async function showDualMetadataEditor(row, node) {
 }
 
 class LoraRowWidget {
-  constructor(node, row, rowIndex) {
+  constructor(node, row, rowIndex, generation) {
     this.type = "custom";
-    this.name = `lora_row_${rowIndex + 1}`;
+    this.name = `lora_row_${generation}_${rowIndex + 1}`;
     this.serialize = false;
     this.node = node;
     this.row = row;
@@ -1005,6 +1078,11 @@ class LoraRowWidget {
     this.hitAreas = {};
     this.preview1 = "";
     this.preview2 = "";
+    this.notes1 = "";
+    this.notes2 = "";
+    this.hoverCanvas = null;
+    this.hoverMoveHandler = null;
+    this.hoverLeaveHandler = null;
     this.loadPreview("1");
     if (node.isDualChain) {
       this.loadPreview("2");
@@ -1016,6 +1094,7 @@ class LoraRowWidget {
   }
 
   draw(ctx, node, width, y) {
+    this.bindHoverCanvas(ctx.canvas);
     this.hitAreas = {};
     if (this.rowIndex === 0) {
       node.rowsStartY = y;
@@ -1090,11 +1169,13 @@ class LoraRowWidget {
     ctx.stroke();
 
     if (isSlot2) {
+      this.hitAreas.slot2 = rect;
       this.hitAreas.toggle2 = toggleRect;
       drawGreenPillToggle(ctx, toggleRect, this.row.lora_2_enabled !== false);
       loraRect.x = toggleRect.x + toggleRect.w + 6;
       loraRect.w = Math.max(40, strengthRect.x - loraRect.x - 6);
     } else if (isSlot1) {
+      this.hitAreas.slot1 = rect;
       this.hitAreas.toggle1 = toggleRect;
       drawGreenPillToggle(ctx, toggleRect, this.row.lora_1_enabled !== false);
       loraRect.x = toggleRect.x + toggleRect.w + 6;
@@ -1118,6 +1199,60 @@ class LoraRowWidget {
 
     drawButton(ctx, strengthRect, `s ${Number(strengthForRole(this.row, role) ?? 1).toFixed(2)}`, !enabled);
     ctx.restore();
+  }
+
+  notesForRole(role) {
+    return role === "2" ? this.notes2 : this.notes1;
+  }
+
+  handleHover(pos, event) {
+    for (const role of this.node.isDualChain ? ["1", "2"] : ["1"]) {
+      if (hit(pos, this.hitAreas[`slot${role}`])) {
+        return showNotesTooltip(
+          rowDisplayName(this.row, role),
+          this.notesForRole(role),
+          event,
+        );
+      }
+    }
+    return false;
+  }
+
+  bindHoverCanvas(canvas) {
+    const graphCanvas = app.canvas?.canvas;
+    if (!canvas || canvas === graphCanvas || canvas === this.hoverCanvas) {
+      return;
+    }
+    this.unbindHoverCanvas();
+    this.hoverCanvas = canvas;
+    this.hoverMoveHandler = (event) => {
+      if (!this.handleHover([event.offsetX, event.offsetY], event)) {
+        scheduleNotesTooltipHide();
+      }
+    };
+    this.hoverLeaveHandler = scheduleNotesTooltipHide;
+    canvas.addEventListener("pointermove", this.hoverMoveHandler);
+    canvas.addEventListener("pointerleave", this.hoverLeaveHandler);
+  }
+
+  unbindHoverCanvas() {
+    if (this.hoverCanvas) {
+      this.hoverCanvas.removeEventListener("pointermove", this.hoverMoveHandler);
+      this.hoverCanvas.removeEventListener("pointerleave", this.hoverLeaveHandler);
+    }
+    this.hoverCanvas = null;
+    this.hoverMoveHandler = null;
+    this.hoverLeaveHandler = null;
+  }
+
+  onRemove() {
+    this.unbindHoverCanvas();
+    scheduleNotesTooltipHide();
+  }
+
+  redraw() {
+    this.triggerDraw?.();
+    redrawNode(this.node);
   }
 
   mouse(event, pos, node) {
@@ -1167,31 +1302,31 @@ class LoraRowWidget {
       }
       this.row.enabled = nextEnabled;
       node.updateStackWidget();
-      redrawNode(node);
+      this.redraw();
       return true;
     }
     if (hit(pos, this.hitAreas.toggle2)) {
       if (!this.row.lora_2 || this.row.lora_2 === "None") {
         this.row.lora_2_enabled = false;
         node.updateStackWidget();
-        redrawNode(node);
+        this.redraw();
         return true;
       }
       this.row.lora_2_enabled = this.row.lora_2_enabled === false;
       node.updateStackWidget();
-      redrawNode(node);
+      this.redraw();
       return true;
     }
     if (hit(pos, this.hitAreas.toggle1)) {
       if (!this.row.lora_1 || this.row.lora_1 === "None") {
         this.row.lora_1_enabled = false;
         node.updateStackWidget();
-        redrawNode(node);
+        this.redraw();
         return true;
       }
       this.row.lora_1_enabled = this.row.lora_1_enabled === false;
       node.updateStackWidget();
-      redrawNode(node);
+      this.redraw();
       return true;
     }
     if (hit(pos, this.hitAreas.lora1)) {
@@ -1235,21 +1370,23 @@ class LoraRowWidget {
               } else {
                 this.preview1 = metadataSummary(metadata);
               }
-              redrawNode(node);
+              this.redraw();
             })
             .catch((error) => {
               showError(error.message);
             });
-          redrawNode(node);
+          this.redraw();
         }
       }, event);
   }
 
   openLoraMenu(event, node, role) {
     showLoraChooser(node.loraChoices || ["None"], (lora) => {
+      hideNotesTooltip();
       if (role === "2") {
         this.row.lora_2 = lora;
         this.row.lora_2_enabled = lora !== "None";
+        this.notes2 = "";
         const pair = node.isDualChain ? findLoraPair(lora, node.loraChoices || []) : null;
         if (pair && (!this.row.lora_1 || this.row.lora_1 === "None")) {
           if (confirm(`Found likely LoRA 1 pair:\n${pair}\n\nLoad it into slot 1?`)) {
@@ -1260,6 +1397,7 @@ class LoraRowWidget {
       } else {
         this.row.lora_1 = lora;
         this.row.lora_1_enabled = lora !== "None";
+        this.notes1 = "";
         const pair = node.isDualChain ? findLoraPair(lora, node.loraChoices || []) : null;
         if (pair && (!this.row.lora_2 || this.row.lora_2 === "None")) {
           if (confirm(`Found likely LoRA 2 pair:\n${pair}\n\nLoad it into slot 2?`)) {
@@ -1272,7 +1410,7 @@ class LoraRowWidget {
       normalizeRow(this.row);
       this.loadPreview(role);
       node.updateStackWidget();
-      redrawNode(node);
+      this.redraw();
     }, loraForRole(this.row, role) || "None");
   }
 
@@ -1286,8 +1424,10 @@ class LoraRowWidget {
     if (!lora || lora === "None") {
       if (role === "2") {
         this.preview2 = "";
+        this.notes2 = "";
       } else {
         this.preview1 = "";
+        this.notes1 = "";
       }
       return;
     }
@@ -1299,25 +1439,29 @@ class LoraRowWidget {
       if (role === "2") {
         this.row.metadataName2 = payload.metadata?.name || "";
         this.preview2 = metadataSummary(payload.metadata);
+        this.notes2 = typeof payload.metadata?.notes === "string" ? payload.metadata.notes : "";
       } else {
         this.row.metadataName1 = payload.metadata?.name || "";
         this.preview1 = metadataSummary(payload.metadata);
+        this.notes1 = typeof payload.metadata?.notes === "string" ? payload.metadata.notes : "";
       }
-      redrawNode(this.node);
+      this.redraw();
     } catch {
       if (role === "2") {
         this.preview2 = "";
+        this.notes2 = "";
       } else {
         this.preview1 = "";
+        this.notes1 = "";
       }
     }
   }
 }
 
 class LoraSettingsWidget {
-  constructor(node) {
+  constructor(node, generation) {
     this.type = "custom";
-    this.name = "lora_settings";
+    this.name = `lora_settings_${generation}`;
     this.serialize = false;
     this.node = node;
     this.hitAreas = {};
@@ -1372,6 +1516,7 @@ class LoraSettingsWidget {
         if (value != null) {
           node.delimiter = value;
           node.updateStackWidget();
+          this.triggerDraw?.();
           redrawNode(node);
         }
       }, event);
@@ -1475,6 +1620,8 @@ app.registerExtension({
       this.exclusive = !!this.exclusive;
       this.removeRowWidgets();
       this.removeEnableInputs();
+      this.loraWidgetGeneration = (this.loraWidgetGeneration || 0) + 1;
+      const generation = this.loraWidgetGeneration;
 
       let addButton = this.widgets?.find((widget) => widget.loraAddWidget);
       if (!addButton) {
@@ -1492,12 +1639,12 @@ app.registerExtension({
       }
 
       this.rows.forEach((row, rowIndex) => {
-        const widget = new LoraRowWidget(this, row, rowIndex);
+        const widget = new LoraRowWidget(this, row, rowIndex, generation);
         widget.loraDynamicWidget = true;
         this.addCustomWidget(widget);
       });
 
-      const settingsWidget = new LoraSettingsWidget(this);
+      const settingsWidget = new LoraSettingsWidget(this, generation);
       settingsWidget.loraDynamicWidget = true;
       this.addCustomWidget(settingsWidget);
 
@@ -1551,6 +1698,27 @@ app.registerExtension({
         this.stackWidget.value = syncedStack;
       }
       this.rebuildWidgets?.();
+      return result;
+    };
+
+    const originalOnMouseMove = nodeType.prototype.onMouseMove;
+    nodeType.prototype.onMouseMove = function (event, pos) {
+      const result = originalOnMouseMove?.apply(this, arguments);
+      const hovered = this.widgets?.some((widget) => (
+        widget.loraDynamicWidget
+        && typeof widget.handleHover === "function"
+        && widget.handleHover(pos, event)
+      ));
+      if (!hovered) {
+        scheduleNotesTooltipHide();
+      }
+      return result;
+    };
+
+    const originalOnMouseLeave = nodeType.prototype.onMouseLeave;
+    nodeType.prototype.onMouseLeave = function () {
+      const result = originalOnMouseLeave?.apply(this, arguments);
+      scheduleNotesTooltipHide();
       return result;
     };
 

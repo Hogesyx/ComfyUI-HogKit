@@ -45,7 +45,11 @@ models/loras/style.safetensors
 models/loras/style.metadata.json
 ```
 
+Hover over a selected LoRA panel to preview the complete `notes` value from its metadata. The preview is available on the single-chain loader and on both LoRA panels in the dual-chain loader. It appears only when the sidecar contains valid JSON with a non-empty string `notes` value.
+
 The metadata editor writes only to the resolved LoRA folder. The ComfyUI process must have permission to write there.
+
+Both chain loaders support the classic canvas and Nodes 2.0 renderers. Adding a row, selecting a LoRA, changing its strength, or toggling it updates the visible row immediately.
 
 ### Image
 
