@@ -180,6 +180,9 @@ function drawGreenPillToggle(ctx, rect, enabled) {
 }
 
 function hit(pos, rect) {
+  if (!rect) {
+    return false;
+  }
   return (
     pos[0] >= rect.x
     && pos[0] <= rect.x + rect.w

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Made custom LoRA row hit testing tolerate controls that are absent from the single-chain layout.
+- Fixed `rect is undefined` when interacting with a single-chain LoRA row in Nodes 2.0.
+
 ## 0.2.0
 
 ### Breaking changes
