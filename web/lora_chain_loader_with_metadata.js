@@ -88,6 +88,37 @@ function redrawNode(node) {
   app.canvas?.setDirty?.(true, true);
 }
 
+function supportMultipleWidgetHosts(widget) {
+  const redrawCallbacks = new Set();
+  const existingTriggerDraw = widget.triggerDraw;
+  if (typeof existingTriggerDraw === "function") {
+    redrawCallbacks.add(existingTriggerDraw);
+  }
+
+  const triggerAllDraws = () => {
+    for (const callback of [...redrawCallbacks]) {
+      try {
+        callback();
+      } catch {
+        // Nodes 2.0 does not identify which host is being unmounted, so prune
+        // callbacks once their canvas is no longer available.
+        redrawCallbacks.delete(callback);
+      }
+    }
+  };
+
+  Object.defineProperty(widget, "triggerDraw", {
+    configurable: true,
+    enumerable: true,
+    get: () => triggerAllDraws,
+    set: (callback) => {
+      if (typeof callback === "function" && callback !== triggerAllDraws) {
+        redrawCallbacks.add(callback);
+      }
+    },
+  });
+}
+
 function getLoraChoices(nodeData) {
   const input = nodeData?.input?.optional?.lora_stack;
   const options = input?.[1] || {};
@@ -1136,6 +1167,7 @@ class LoraRowWidget {
     this.hoverCanvas = null;
     this.hoverMoveHandler = null;
     this.hoverLeaveHandler = null;
+    supportMultipleWidgetHosts(this);
     this.loadPreview("1");
     if (node.isDualChain) {
       this.loadPreview("2");
@@ -1524,6 +1556,7 @@ class LoraSettingsWidget {
     this.serialize = false;
     this.node = node;
     this.hitAreas = {};
+    supportMultipleWidgetHosts(this);
   }
 
   computeSize(width) {
