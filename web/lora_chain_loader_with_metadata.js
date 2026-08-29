@@ -297,13 +297,26 @@ function hit(pos, rect) {
 
 function captureWidgetCanvas(widget, ctx) {
   const scale = ctx.getTransform?.().a || 1;
+  widget.pointerCanvases ||= new WeakMap();
+  widget.pointerCanvases.set(ctx.canvas, {
+    width: ctx.canvas.width / scale,
+    height: ctx.canvas.height / scale,
+  });
   widget.pointerCanvas = ctx.canvas;
   widget.pointerWidth = ctx.canvas.width / scale;
   widget.pointerHeight = ctx.canvas.height / scale;
 }
 
-function widgetPointerPosition(widget, event) {
-  const canvas = widget.pointerCanvas;
+function widgetCanvasForEvent(widget, event) {
+  for (const canvas of [event?.currentTarget, event?.target]) {
+    if (canvas && widget.pointerCanvases?.has(canvas)) {
+      return canvas;
+    }
+  }
+  return widget.activePointerCanvas || widget.pointerCanvas;
+}
+
+function widgetPointerPosition(widget, event, canvas = widgetCanvasForEvent(widget, event)) {
   if (!canvas || !Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) {
     return null;
   }
@@ -311,39 +324,62 @@ function widgetPointerPosition(widget, event) {
   if (!bounds?.width || !bounds?.height) {
     return null;
   }
+  const geometry = widget.pointerCanvases?.get(canvas) || {
+    width: widget.pointerWidth,
+    height: widget.pointerHeight,
+  };
   return [
-    (event.clientX - bounds.left) * (widget.pointerWidth / bounds.width),
-    (event.clientY - bounds.top) * (widget.pointerHeight / bounds.height),
+    (event.clientX - bounds.left) * (geometry.width / bounds.width),
+    (event.clientY - bounds.top) * (geometry.height / bounds.height),
   ];
 }
 
+function storeWidgetHitAreas(widget, canvas) {
+  widget.hitAreasByCanvas ||= new WeakMap();
+  widget.hitAreasByCanvas.set(canvas, widget.hitAreas);
+}
+
+function activateWidgetHost(widget, event, canvas = widgetCanvasForEvent(widget, event)) {
+  const hitAreas = canvas && widget.hitAreasByCanvas?.get(canvas);
+  if (hitAreas) {
+    widget.hitAreas = hitAreas;
+  }
+  return canvas;
+}
+
 function handleVueWidgetPointerDown(widget, pointer, node) {
-  if (widget.pointerCanvas === app.canvas?.canvas) {
+  const event = pointer?.eDown;
+  const canvas = activateWidgetHost(widget, event);
+  if (!canvas || canvas === app.canvas?.canvas) {
     return false;
   }
-  const event = pointer?.eDown;
-  const pos = widgetPointerPosition(widget, event);
+  const pos = widgetPointerPosition(widget, event, canvas);
   if (!pos) {
     return false;
   }
 
+  widget.activePointerCanvas = canvas;
   const handled = widget.mouse(event, pos, node);
   if (!handled) {
+    widget.activePointerCanvas = null;
     return false;
   }
 
   pointer.onDrag = (moveEvent) => {
-    const movePos = widgetPointerPosition(widget, moveEvent);
+    activateWidgetHost(widget, moveEvent, canvas);
+    const movePos = widgetPointerPosition(widget, moveEvent, canvas);
     if (movePos) {
       widget.mouse(moveEvent, movePos, node);
     }
   };
   pointer.finally = () => {
     const upEvent = pointer.eUp;
-    const upPos = widgetPointerPosition(widget, upEvent);
+    activateWidgetHost(widget, upEvent, canvas);
+    const upPos = widgetPointerPosition(widget, upEvent, canvas);
     if (upEvent && upPos) {
       widget.mouse(upEvent, upPos, node);
     }
+    widget.activePointerCanvas = null;
   };
   return true;
 }
@@ -1164,9 +1200,7 @@ class LoraRowWidget {
     this.preview2 = "";
     this.notes1 = "";
     this.notes2 = "";
-    this.hoverCanvas = null;
-    this.hoverMoveHandler = null;
-    this.hoverLeaveHandler = null;
+    this.hoverCanvases = new Map();
     supportMultipleWidgetHosts(this);
     this.loadPreview("1");
     if (node.isDualChain) {
@@ -1236,6 +1270,7 @@ class LoraRowWidget {
       ctx.fillRect(rowX + 1, rowY + 1, rowW - 2, rowH - 2);
     }
     ctx.restore();
+    storeWidgetHitAreas(this, ctx.canvas);
   }
 
   drawSlot(ctx, rect, role, enabled) {
@@ -1291,9 +1326,9 @@ class LoraRowWidget {
     return role === "2" ? this.notes2 : this.notes1;
   }
 
-  handleHover(pos, event) {
+  handleHover(pos, event, hitAreas = this.hitAreas) {
     for (const role of this.node.isDualChain ? ["1", "2"] : ["1"]) {
-      if (hit(pos, this.hitAreas[`slot${role}`])) {
+      if (hit(pos, hitAreas?.[`slot${role}`])) {
         return showNotesTooltip(
           rowDisplayName(this.row, role),
           this.notesForRole(role),
@@ -1306,34 +1341,32 @@ class LoraRowWidget {
 
   bindHoverCanvas(canvas) {
     const graphCanvas = app.canvas?.canvas;
-    if (!canvas || canvas === graphCanvas || canvas === this.hoverCanvas) {
+    if (!canvas || canvas === graphCanvas || this.hoverCanvases.has(canvas)) {
       return;
     }
-    this.unbindHoverCanvas();
-    this.hoverCanvas = canvas;
-    this.hoverMoveHandler = (event) => {
-      const pos = widgetPointerPosition(this, event) || [event.offsetX, event.offsetY];
-      if (!this.handleHover(pos, event)) {
+    const moveHandler = (event) => {
+      const pos = widgetPointerPosition(this, event, canvas) || [event.offsetX, event.offsetY];
+      const hitAreas = this.hitAreasByCanvas?.get(canvas) || this.hitAreas;
+      if (!this.handleHover(pos, event, hitAreas)) {
         scheduleNotesTooltipHide();
       }
     };
-    this.hoverLeaveHandler = scheduleNotesTooltipHide;
-    canvas.addEventListener("pointermove", this.hoverMoveHandler);
-    canvas.addEventListener("pointerleave", this.hoverLeaveHandler);
+    const leaveHandler = scheduleNotesTooltipHide;
+    this.hoverCanvases.set(canvas, { moveHandler, leaveHandler });
+    canvas.addEventListener("pointermove", moveHandler);
+    canvas.addEventListener("pointerleave", leaveHandler);
   }
 
-  unbindHoverCanvas() {
-    if (this.hoverCanvas) {
-      this.hoverCanvas.removeEventListener("pointermove", this.hoverMoveHandler);
-      this.hoverCanvas.removeEventListener("pointerleave", this.hoverLeaveHandler);
+  unbindHoverCanvases() {
+    for (const [canvas, handlers] of this.hoverCanvases) {
+      canvas.removeEventListener("pointermove", handlers.moveHandler);
+      canvas.removeEventListener("pointerleave", handlers.leaveHandler);
     }
-    this.hoverCanvas = null;
-    this.hoverMoveHandler = null;
-    this.hoverLeaveHandler = null;
+    this.hoverCanvases.clear();
   }
 
   onRemove() {
-    this.unbindHoverCanvas();
+    this.unbindHoverCanvases();
     scheduleNotesTooltipHide();
   }
 
@@ -1347,6 +1380,7 @@ class LoraRowWidget {
   }
 
   mouse(event, pos, node) {
+    activateWidgetHost(this, event);
     if (event.type === "pointerup") {
       node.draggingRow = null;
       node.dragLastTarget = null;
@@ -1597,9 +1631,11 @@ class LoraSettingsWidget {
     this.hitAreas.delimiter = delimiterRect;
     drawButton(ctx, delimiterRect, JSON.stringify(node.delimiter ?? ", "));
     ctx.restore();
+    storeWidgetHitAreas(this, ctx.canvas);
   }
 
   mouse(event, pos, node) {
+    activateWidgetHost(this, event);
     if (event.type !== "pointerdown") {
       return false;
     }
