@@ -2,6 +2,6 @@
   "name": "comfyui-hogkit",
   "author": "Hogesyx",
   "description": "ComfyUI nodes for LoRA workflows, image tools, and workflow utilities.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "license": "GPL-3.0-only"
 }

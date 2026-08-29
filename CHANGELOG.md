@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+### Fixed
+
+- Kept Nodes 2.0 canvas geometry and control hitboxes separate for the main node and sidebar, so selecting a LoRA no longer makes the metadata and remove buttons unclickable until resize.
+- Kept custom-widget redraw callbacks for every mounted Nodes 2.0 host instead of allowing the sidebar renderer to replace the main node renderer.
+- Applied the same multi-host redraw and hitbox handling to the recursive image selector, keeping its selector and upload controls synchronized at different node/sidebar widths.
+
 ## 0.2.3
 
 ### Fixed

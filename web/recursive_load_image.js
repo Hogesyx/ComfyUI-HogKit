@@ -67,6 +67,44 @@ function redrawNode(node) {
   app.canvas?.setDirty?.(true, true);
 }
 
+function supportMultipleWidgetHosts(widget) {
+  const redrawCallbacks = new Set();
+  const existingTriggerDraw = widget.triggerDraw;
+  if (typeof existingTriggerDraw === "function") {
+    redrawCallbacks.add(existingTriggerDraw);
+  }
+
+  const triggerAllDraws = () => {
+    for (const callback of [...redrawCallbacks]) {
+      try {
+        callback();
+      } catch {
+        redrawCallbacks.delete(callback);
+      }
+    }
+  };
+
+  Object.defineProperty(widget, "triggerDraw", {
+    configurable: true,
+    enumerable: true,
+    get: () => triggerAllDraws,
+    set: (callback) => {
+      if (typeof callback === "function" && callback !== triggerAllDraws) {
+        redrawCallbacks.add(callback);
+      }
+    },
+  });
+}
+
+function widgetCanvasForEvent(widget, event) {
+  for (const canvas of [event?.currentTarget, event?.target]) {
+    if (canvas && widget.browseRectsByCanvas?.has(canvas)) {
+      return canvas;
+    }
+  }
+  return null;
+}
+
 function setImageWidgetValue(node, image, event) {
   const inputWidget = node.imageInputWidget;
   if (!inputWidget) {
@@ -374,6 +412,8 @@ class ImageSelectorWidget {
     this.node = node;
     this.value = node.selectedImage || "";
     this.browseRect = null;
+    this.browseRectsByCanvas = new WeakMap();
+    supportMultipleWidgetHosts(this);
     this.computeSize = this.computeSize.bind(this);
     this.setValue = this.setValue.bind(this);
     this.draw = this.draw.bind(this);
@@ -399,6 +439,7 @@ class ImageSelectorWidget {
     const height = 24;
     const top = y + 2;
     this.browseRect = { x: selectWidth + gap, y: top, w: browseWidth, h: height };
+    this.browseRectsByCanvas.set(ctx.canvas, this.browseRect);
     ctx.save();
     ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
     ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
@@ -424,8 +465,8 @@ class ImageSelectorWidget {
     ctx.restore();
   }
 
-  isBrowsePosition(x, y) {
-    const rect = this.browseRect;
+  isBrowsePosition(x, y, canvas = null) {
+    const rect = (canvas && this.browseRectsByCanvas.get(canvas)) || this.browseRect;
     return rect && x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
@@ -433,7 +474,8 @@ class ImageSelectorWidget {
     if (event.type !== "pointerdown") {
       return false;
     }
-    if (this.isBrowsePosition(pos[0], pos[1])) {
+    const canvas = widgetCanvasForEvent(this, event);
+    if (this.isBrowsePosition(pos[0], pos[1], canvas)) {
       this.openFileBrowser();
       return true;
     }
@@ -445,7 +487,8 @@ class ImageSelectorWidget {
     const event = options.e;
     const x = event?.canvasX - this.node.pos[0];
     const y = event?.canvasY - this.node.pos[1];
-    if (this.isBrowsePosition(x, y)) {
+    const canvas = widgetCanvasForEvent(this, event);
+    if (this.isBrowsePosition(x, y, canvas)) {
       this.openFileBrowser();
       return;
     }

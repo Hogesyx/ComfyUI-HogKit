@@ -49,13 +49,15 @@ Hover over a selected LoRA panel to preview the complete `notes` value from its 
 
 The metadata editor writes only to the resolved LoRA folder. The ComfyUI process must have permission to write there.
 
-Both chain loaders support the classic canvas and Nodes 2.0 renderers. Adding a row, selecting a LoRA, changing its strength, toggling it, editing metadata, or removing it remains interactive after the node is resized or expanded.
+Both chain loaders support the classic canvas and Nodes 2.0 renderers. The node and sidebar maintain independent canvas geometry, so adding a row, selecting a LoRA, changing its strength, toggling it, editing metadata, or removing it remains interactive across redraws, resizing, and expansion.
 
 ### Image
 
 - **HogKit Load Image** loads images from the ComfyUI input directory or one-level subfolders. Use the folder selector to filter images, the refresh button to rescan the input directory, and the native upload control to browse for a new image. The selected image is previewed on the node.
 - **HogKit Auto Resolution Selector** selects a stock aspect ratio and target dimensions from an image or override dimensions. It passes the image through and outputs `width` and `height`.
 - **HogKit Qwen Image Scaler** pads or crops images to the selected Qwen Image resolution.
+
+The HogKit Load Image selector supports both the main Nodes 2.0 node and sidebar at different widths. Selecting or uploading an image updates both views without changing either view's control hitboxes.
 
 For Auto Resolution Selector, `override_width` and `override_height` are advanced inputs. With an image connected, either nonzero override can replace its corresponding dimension when calculating the aspect ratio. Without an image, Auto mode requires both overrides.
 
@@ -75,6 +77,7 @@ python -m py_compile *.py
 node --check web/node_status.js
 node --check web/show_convert_anything.js
 node --check web/lora_chain_loader_with_metadata.js
+node --check web/recursive_load_image.js
 ```
 
 ## License
