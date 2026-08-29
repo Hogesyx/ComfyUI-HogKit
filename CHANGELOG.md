@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+### Fixed
+
+- Fixed unreliable toggle, metadata, remove, strength, and settings controls after resizing or expanding a chain loader in Nodes 2.0.
+- Normalized Vue-hosted widget pointer coordinates against the canvas's rendered bounds while preserving classic-canvas event handling.
+
 ## 0.2.2
 
 ### Added

@@ -49,7 +49,7 @@ Hover over a selected LoRA panel to preview the complete `notes` value from its 
 
 The metadata editor writes only to the resolved LoRA folder. The ComfyUI process must have permission to write there.
 
-Both chain loaders support the classic canvas and Nodes 2.0 renderers. Adding a row, selecting a LoRA, changing its strength, or toggling it updates the visible row immediately.
+Both chain loaders support the classic canvas and Nodes 2.0 renderers. Adding a row, selecting a LoRA, changing its strength, toggling it, editing metadata, or removing it remains interactive after the node is resized or expanded.
 
 ### Image
 

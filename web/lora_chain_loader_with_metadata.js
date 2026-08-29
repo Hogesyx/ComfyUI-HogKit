@@ -264,6 +264,59 @@ function hit(pos, rect) {
   );
 }
 
+function captureWidgetCanvas(widget, ctx) {
+  const scale = ctx.getTransform?.().a || 1;
+  widget.pointerCanvas = ctx.canvas;
+  widget.pointerWidth = ctx.canvas.width / scale;
+  widget.pointerHeight = ctx.canvas.height / scale;
+}
+
+function widgetPointerPosition(widget, event) {
+  const canvas = widget.pointerCanvas;
+  if (!canvas || !Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) {
+    return null;
+  }
+  const bounds = canvas.getBoundingClientRect?.();
+  if (!bounds?.width || !bounds?.height) {
+    return null;
+  }
+  return [
+    (event.clientX - bounds.left) * (widget.pointerWidth / bounds.width),
+    (event.clientY - bounds.top) * (widget.pointerHeight / bounds.height),
+  ];
+}
+
+function handleVueWidgetPointerDown(widget, pointer, node) {
+  if (widget.pointerCanvas === app.canvas?.canvas) {
+    return false;
+  }
+  const event = pointer?.eDown;
+  const pos = widgetPointerPosition(widget, event);
+  if (!pos) {
+    return false;
+  }
+
+  const handled = widget.mouse(event, pos, node);
+  if (!handled) {
+    return false;
+  }
+
+  pointer.onDrag = (moveEvent) => {
+    const movePos = widgetPointerPosition(widget, moveEvent);
+    if (movePos) {
+      widget.mouse(moveEvent, movePos, node);
+    }
+  };
+  pointer.finally = () => {
+    const upEvent = pointer.eUp;
+    const upPos = widgetPointerPosition(widget, upEvent);
+    if (upEvent && upPos) {
+      widget.mouse(upEvent, upPos, node);
+    }
+  };
+  return true;
+}
+
 function showError(message) {
   alert(message);
 }
@@ -1094,6 +1147,7 @@ class LoraRowWidget {
   }
 
   draw(ctx, node, width, y) {
+    captureWidgetCanvas(this, ctx);
     this.bindHoverCanvas(ctx.canvas);
     this.hitAreas = {};
     if (this.rowIndex === 0) {
@@ -1226,7 +1280,8 @@ class LoraRowWidget {
     this.unbindHoverCanvas();
     this.hoverCanvas = canvas;
     this.hoverMoveHandler = (event) => {
-      if (!this.handleHover([event.offsetX, event.offsetY], event)) {
+      const pos = widgetPointerPosition(this, event) || [event.offsetX, event.offsetY];
+      if (!this.handleHover(pos, event)) {
         scheduleNotesTooltipHide();
       }
     };
@@ -1253,6 +1308,10 @@ class LoraRowWidget {
   redraw() {
     this.triggerDraw?.();
     redrawNode(this.node);
+  }
+
+  onPointerDown(pointer, node) {
+    return handleVueWidgetPointerDown(this, pointer, node);
   }
 
   mouse(event, pos, node) {
@@ -1472,6 +1531,7 @@ class LoraSettingsWidget {
   }
 
   draw(ctx, node, width, y) {
+    captureWidgetCanvas(this, ctx);
     this.hitAreas = {};
     const margin = 12;
     const rowX = margin;
@@ -1541,6 +1601,10 @@ class LoraSettingsWidget {
     }
 
     return false;
+  }
+
+  onPointerDown(pointer, node) {
+    return handleVueWidgetPointerDown(this, pointer, node);
   }
 }
 
