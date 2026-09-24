@@ -4,7 +4,7 @@ const NODE_CONFIGS = {
   HogKitLoraSingleChainLoaderWithMetadata: { dual: false, minWidth: 440 },
   HogKitLoraDualChainLoaderWithMetadata: { dual: true, minWidth: 640 },
 };
-const ROW_HEIGHT = 78;
+const ROW_HEIGHT = 50;
 let notesTooltip = null;
 let notesTooltipHideTimer = null;
 
@@ -239,44 +239,11 @@ function finishRowDrag(node, pos) {
   if (targetIndex != null && sourceIndex !== targetIndex) {
     moveItem(node.rows, sourceIndex, targetIndex);
     node.updateStackWidget();
-    reorderLoraRowWidgets(node);
+    node.rebuildWidgets?.();
   } else {
     redrawNode(node);
   }
   return true;
-}
-
-function reorderLoraRowWidgets(node) {
-  const widgets = node.widgets;
-  if (!widgets?.length) {
-    return;
-  }
-
-  const rowWidgets = widgets.filter((widget) => widget.loraDynamicWidget && widget.row);
-  if (rowWidgets.length !== (node.rows?.length || 0)) {
-    redrawNode(node);
-    return;
-  }
-
-  const widgetByRow = new Map(rowWidgets.map((widget) => [widget.row, widget]));
-  const orderedRowWidgets = node.rows.map((row, rowIndex) => {
-    const widget = widgetByRow.get(row);
-    if (widget) {
-      widget.rowIndex = rowIndex;
-    }
-    return widget;
-  });
-  if (orderedRowWidgets.some((widget) => !widget)) {
-    redrawNode(node);
-    return;
-  }
-
-  let cursor = 0;
-  const nextWidgets = widgets.map((widget) => (
-    rowWidgets.includes(widget) ? orderedRowWidgets[cursor++] : widget
-  ));
-  widgets.splice(0, widgets.length, ...nextWidgets);
-  redrawNode(node);
 }
 
 function hideWidget(widget) {
@@ -1295,6 +1262,7 @@ class LoraRowWidget {
     const rowH = ROW_HEIGHT - 8;
     const controlSize = 22;
     const gap = 5;
+    const controlY = rowY + (rowH - controlSize) / 2;
 
     ctx.save();
     ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
@@ -1314,18 +1282,18 @@ class LoraRowWidget {
     }
 
     let x = rowX + 7;
-    const dragRect = { x, y: rowY + 24, w: 16, h: 22 };
+    const dragRect = { x, y: controlY, w: 16, h: 22 };
     this.hitAreas.drag = dragRect;
     drawDragHandle(ctx, dragRect);
     x += dragRect.w + 7;
 
-    const toggleRect = { x, y: rowY + 24, w: 44, h: 22 };
+    const toggleRect = { x, y: controlY, w: 44, h: 22 };
     this.hitAreas.toggle = toggleRect;
     this.drawToggle(ctx, toggleRect);
     x += toggleRect.w + 8;
 
-    const removeRect = { x: rowX + rowW - controlSize - 6, y: rowY + 24, w: controlSize, h: controlSize };
-    const editRect = { x: removeRect.x - controlSize - gap, y: rowY + 24, w: controlSize, h: controlSize };
+    const removeRect = { x: rowX + rowW - controlSize - 6, y: controlY, w: controlSize, h: controlSize };
+    const editRect = { x: removeRect.x - controlSize - gap, y: controlY, w: controlSize, h: controlSize };
     const panelGap = 8;
     const panelW = node.isDualChain
       ? Math.max(120, (editRect.x - x - panelGap * 2) / 2)
@@ -1352,9 +1320,10 @@ class LoraRowWidget {
   }
 
   drawSlot(ctx, rect, role, enabled) {
-    const loraRect = { x: rect.x + 22, y: rect.y + 2, w: Math.max(40, rect.w - 84), h: 20 };
-    const strengthRect = { x: rect.x + rect.w - 58, y: rect.y + 2, w: 52, h: 20 };
-    const toggleRect = { x: rect.x + 2, y: rect.y + 2, w: 42, h: 20 };
+    const controlY = rect.y + (rect.h - 20) / 2;
+    const loraRect = { x: rect.x + 22, y: controlY, w: Math.max(40, rect.w - 84), h: 20 };
+    const strengthRect = { x: rect.x + rect.w - 58, y: controlY, w: 52, h: 20 };
+    const toggleRect = { x: rect.x + 2, y: controlY, w: 42, h: 20 };
     const isSlot2 = role === "2";
     const isSlot1 = role === "1";
 
@@ -1391,11 +1360,6 @@ class LoraRowWidget {
     const rolePrefix = this.node.isDualChain ? `${role}: ` : "";
     ctx.fillText(fitText(ctx, `${rolePrefix}${rowDisplayName(this.row, role)}`, loraRect.w), loraRect.x, loraRect.y + loraRect.h / 2);
 
-    const preview = (role === "2" ? this.preview2 : this.preview1) || "metadata prompt will be appended";
-    ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR;
-    ctx.font = "10px sans-serif";
-    ctx.fillText(fitText(ctx, preview, rect.w - 12), rect.x + 6, rect.y + 42);
-
     drawButton(ctx, strengthRect, `s ${Number(strengthForRole(this.row, role) ?? 1).toFixed(2)}`, !enabled);
     ctx.restore();
   }
@@ -1407,9 +1371,10 @@ class LoraRowWidget {
   handleHover(pos, event, hitAreas = this.hitAreas) {
     for (const role of this.node.isDualChain ? ["1", "2"] : ["1"]) {
       if (hit(pos, hitAreas?.[`slot${role}`])) {
+        const preview = role === "2" ? this.preview2 : this.preview1;
         return showNotesTooltip(
           rowDisplayName(this.row, role),
-          this.notesForRole(role),
+          this.notesForRole(role) || preview || "metadata prompt will be appended",
           event,
         );
       }

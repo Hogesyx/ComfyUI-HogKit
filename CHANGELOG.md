@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Kept LoRA rows in place while dragging and applied the reorder on release, with a visible drop target in Nodes 2.0.
+- Made LoRA rows more compact, kept them in place while dragging, and applied the reorder on release. Metadata details now appear on hover.
 
 ## 0.2.5
 
