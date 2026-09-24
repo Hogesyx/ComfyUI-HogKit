@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6
+
+### Fixed
+
+- Kept LoRA rows in place while dragging and applied the reorder on release, with a visible drop target in Nodes 2.0.
+
 ## 0.2.5
 
 ### Fixed

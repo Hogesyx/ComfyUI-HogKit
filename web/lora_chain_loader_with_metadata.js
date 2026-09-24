@@ -214,6 +214,38 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+function rowDropTargetIndex(node, pos) {
+  if (!node.rows?.length) {
+    return null;
+  }
+  const rowsStartY = node.rowsStartY ?? 0;
+  return clamp(
+    Math.floor((pos[1] - rowsStartY) / ROW_HEIGHT),
+    0,
+    node.rows.length - 1,
+  );
+}
+
+function finishRowDrag(node, pos) {
+  if (node.draggingRow == null) {
+    return false;
+  }
+
+  const targetIndex = pos ? rowDropTargetIndex(node, pos) : node.dragLastTarget;
+  const sourceIndex = node.draggingRow;
+  node.draggingRow = null;
+  node.dragLastTarget = null;
+
+  if (targetIndex != null && sourceIndex !== targetIndex) {
+    moveItem(node.rows, sourceIndex, targetIndex);
+    node.updateStackWidget();
+    reorderLoraRowWidgets(node);
+  } else {
+    redrawNode(node);
+  }
+  return true;
+}
+
 function reorderLoraRowWidgets(node) {
   const widgets = node.widgets;
   if (!widgets?.length) {
@@ -1272,6 +1304,15 @@ class LoraRowWidget {
     ctx.fill();
     ctx.stroke();
 
+    if (node.draggingRow != null && node.dragLastTarget === this.rowIndex
+      && node.draggingRow !== this.rowIndex) {
+      ctx.strokeStyle = LiteGraph.WIDGET_TEXT_COLOR || "#eee";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(rowX + 1, rowY + 1, rowW - 2, rowH - 2, 5);
+      ctx.stroke();
+    }
+
     let x = rowX + 7;
     const dragRect = { x, y: rowY + 24, w: 16, h: 22 };
     this.hitAreas.drag = dragRect;
@@ -1418,25 +1459,15 @@ class LoraRowWidget {
 
   mouse(event, pos, node) {
     activateWidgetHost(this, event);
-    if (event.type === "pointerup") {
-      node.draggingRow = null;
-      node.dragLastTarget = null;
-      return true;
+    if (event.type === "pointerup" || event.type === "pointercancel") {
+      return finishRowDrag(node, pos);
     }
 
     if (event.type === "pointermove" && node.draggingRow != null) {
-      const rowsStartY = node.rowsStartY ?? this.hitAreas.drag.y;
-      const targetIndex = clamp(
-        Math.floor((pos[1] - rowsStartY) / ROW_HEIGHT),
-        0,
-        node.rows.length - 1,
-      );
-      if (node.draggingRow !== targetIndex) {
-        moveItem(node.rows, node.draggingRow, targetIndex);
-        node.draggingRow = targetIndex;
+      const targetIndex = rowDropTargetIndex(node, pos);
+      if (node.dragLastTarget !== targetIndex) {
         node.dragLastTarget = targetIndex;
-        node.updateStackWidget();
-        reorderLoraRowWidgets(node);
+        redrawNode(node);
       }
       return true;
     }
@@ -1447,12 +1478,7 @@ class LoraRowWidget {
     if (hit(pos, this.hitAreas.drag)) {
       node.draggingRow = this.rowIndex;
       node.dragLastTarget = this.rowIndex;
-      const clearDrag = () => {
-        node.draggingRow = null;
-        node.dragLastTarget = null;
-        window.removeEventListener("pointerup", clearDrag);
-      };
-      window.addEventListener("pointerup", clearDrag, { once: true });
+      redrawNode(node);
       return true;
     }
     if (hit(pos, this.hitAreas.toggle)) {
