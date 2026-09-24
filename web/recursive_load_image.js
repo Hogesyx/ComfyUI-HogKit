@@ -25,9 +25,12 @@ function getWidget(node, name) {
 }
 
 function hideWidget(widget) {
-  widget.type = "hidden";
+  widget.hidden = true;
   widget.options = { ...widget.options, hidden: true };
-  widget.computeSize = () => [0, -4];
+  if (!widget.visibility) {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+  }
 }
 
 function fitText(ctx, text, maxWidth) {
@@ -554,11 +557,13 @@ function setupNode(node, nodeData) {
       originalOnRemoved?.apply(this, arguments);
     };
     node.imageSelectorWidget = node.addCustomWidget(new ImageSelectorWidget(node));
-    const size = node.computeSize();
-    node.setSize([
-      Math.max(node.size?.[0] || 0, size[0]),
-      Math.max(node.size?.[1] || 0, size[1]),
-    ]);
+    if (!globalThis.LiteGraph?.vueNodesMode) {
+      const size = node.computeSize();
+      node.setSize([
+        Math.max(node.size?.[0] || 0, size[0]),
+        Math.max(node.size?.[1] || 0, size[1]),
+      ]);
+    }
   }
   syncImageChoices(node);
 }

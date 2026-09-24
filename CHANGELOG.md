@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+### Fixed
+
+- Kept LoRA row drag/reordering attached to the active custom widget instead of rebuilding the widget tree during an in-progress pointer gesture.
+- Stopped Nodes 2.0 from forcing node heights through legacy `computeSize()` / `setSize()` paths, allowing the Vue renderer and ResizeObserver to remain the height source of truth.
+- Switched hidden backend widgets to ComfyUI's modern visibility facade while retaining the legacy hidden-widget fallback for older frontends.
+- Capped the Show Convert Anything read-only display widget to a compact height so multiline output no longer inflates the node.
+
 ## 0.2.4
 
 ### Fixed

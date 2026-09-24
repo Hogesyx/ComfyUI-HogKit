@@ -52,9 +52,12 @@ function updateStatus(node) {
 }
 
 function hideWidget(widget) {
-  widget.type = "hidden";
+  widget.hidden = true;
   widget.options = { ...widget.options, hidden: true };
-  widget.computeSize = () => [0, -4];
+  if (!widget.visibility) {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+  }
 }
 
 function ensureTargetInput(node) {

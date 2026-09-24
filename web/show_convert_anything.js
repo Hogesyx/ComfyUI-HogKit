@@ -111,6 +111,12 @@ function ensureDisplayWidget(node) {
   ).widget;
   widget.inputEl.readOnly = true;
   widget.inputEl.style.opacity = 0.65;
+  widget.options = widget.options || {};
+  widget.options.minNodeSize = [240, 100];
+  widget.options.getMinHeight = () => 64;
+  widget.options.getMaxHeight = () => 160;
+  widget.inputEl.style.setProperty("--comfy-widget-min-height", "64px");
+  widget.inputEl.style.setProperty("--comfy-widget-max-height", "160px");
   widget.serializeValue = () => "";
 }
 
@@ -174,9 +180,11 @@ function updateDisplay(node, text) {
   });
   display.displayValues = values;
   display.value = lines.join("\n");
-  const size = node.computeSize?.();
-  if (size) {
-    node.setSize?.([Math.max(node.size[0], size[0]), Math.max(node.size[1], size[1])]);
+  if (!globalThis.LiteGraph?.vueNodesMode) {
+    const size = node.computeSize?.();
+    if (size) {
+      node.setSize?.([Math.max(node.size[0], size[0]), Math.max(node.size[1], size[1])]);
+    }
   }
   app.graph?.setDirtyCanvas(true, false);
 }

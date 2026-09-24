@@ -214,9 +214,46 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+function reorderLoraRowWidgets(node) {
+  const widgets = node.widgets;
+  if (!widgets?.length) {
+    return;
+  }
+
+  const rowWidgets = widgets.filter((widget) => widget.loraDynamicWidget && widget.row);
+  if (rowWidgets.length !== (node.rows?.length || 0)) {
+    redrawNode(node);
+    return;
+  }
+
+  const widgetByRow = new Map(rowWidgets.map((widget) => [widget.row, widget]));
+  const orderedRowWidgets = node.rows.map((row, rowIndex) => {
+    const widget = widgetByRow.get(row);
+    if (widget) {
+      widget.rowIndex = rowIndex;
+    }
+    return widget;
+  });
+  if (orderedRowWidgets.some((widget) => !widget)) {
+    redrawNode(node);
+    return;
+  }
+
+  let cursor = 0;
+  const nextWidgets = widgets.map((widget) => (
+    rowWidgets.includes(widget) ? orderedRowWidgets[cursor++] : widget
+  ));
+  widgets.splice(0, widgets.length, ...nextWidgets);
+  redrawNode(node);
+}
+
 function hideWidget(widget) {
-  widget.type = "hidden";
-  widget.computeSize = () => [0, -4];
+  widget.hidden = true;
+  widget.options = { ...widget.options, hidden: true };
+  if (!widget.visibility) {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+  }
 }
 
 function fitText(ctx, text, maxWidth) {
@@ -1399,7 +1436,7 @@ class LoraRowWidget {
         node.draggingRow = targetIndex;
         node.dragLastTarget = targetIndex;
         node.updateStackWidget();
-        node.rebuildWidgets();
+        reorderLoraRowWidgets(node);
       }
       return true;
     }
@@ -1785,15 +1822,27 @@ app.registerExtension({
         this.updateStackWidget();
       }
 
-      const computed = this.computeSize();
-      const nextSize = [
-        Math.max(this.size?.[0] || 0, computed[0], this.loraChainMinWidth),
-        Math.max(computed[1], 120),
-      ];
-      if (typeof this.setSize === "function") {
-        this.setSize(nextSize);
+      if (globalThis.LiteGraph?.vueNodesMode) {
+        const currentWidth = this.size?.[0] || 0;
+        if (currentWidth < this.loraChainMinWidth) {
+          const nextSize = [this.loraChainMinWidth, this.size?.[1] || 120];
+          if (typeof this.setSize === "function") {
+            this.setSize(nextSize);
+          } else {
+            this.size = nextSize;
+          }
+        }
       } else {
-        this.size = nextSize;
+        const computed = this.computeSize();
+        const nextSize = [
+          Math.max(this.size?.[0] || 0, computed[0], this.loraChainMinWidth),
+          Math.max(computed[1], 120),
+        ];
+        if (typeof this.setSize === "function") {
+          this.setSize(nextSize);
+        } else {
+          this.size = nextSize;
+        }
       }
       redrawNode(this);
     };
