@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7
+
+### Fixed
+
+- Matched LoRA row, strength, toggle, edit, remove, and settings text to ComfyUI's native widget typography using the live `NODE_SUBTEXT_SIZE` and `NODE_FONT` values instead of hard-coded canvas fonts.
+- Restored vertical breathing room to LoRA rows after the compact-row change so controls no longer visually crowd or overlap.
+
 ## 0.2.6
 
 ### Fixed

@@ -4,7 +4,7 @@ const NODE_CONFIGS = {
   HogKitLoraSingleChainLoaderWithMetadata: { dual: false, minWidth: 440 },
   HogKitLoraDualChainLoaderWithMetadata: { dual: true, minWidth: 640 },
 };
-const ROW_HEIGHT = 50;
+const ROW_HEIGHT = 64;
 let notesTooltip = null;
 let notesTooltipHideTimer = null;
 
@@ -267,6 +267,12 @@ function fitText(ctx, text, maxWidth) {
   return `${trimmed}...`;
 }
 
+function setNativeWidgetFont(ctx) {
+  const size = Number(LiteGraph.NODE_SUBTEXT_SIZE) || 12;
+  const family = LiteGraph.NODE_FONT || "Inter";
+  ctx.font = `normal ${size}px ${family}`;
+}
+
 function drawButton(ctx, rect, label, disabled = false) {
   ctx.save();
   ctx.globalAlpha = disabled ? 0.35 : 1;
@@ -279,6 +285,7 @@ function drawButton(ctx, rect, label, disabled = false) {
   ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  setNativeWidgetFont(ctx);
   ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
   ctx.restore();
 }
@@ -312,7 +319,7 @@ function drawGreenPillToggle(ctx, rect, enabled) {
   ctx.fill();
 
   ctx.fillStyle = enabled ? "#d9f2df" : "#ddd";
-  ctx.font = "9px sans-serif";
+  setNativeWidgetFont(ctx);
   ctx.textAlign = enabled ? "left" : "right";
   ctx.textBaseline = "middle";
   ctx.fillText(enabled ? "ON" : "OFF", enabled ? rect.x + 7 : rect.x + rect.w - 7, rect.y + rect.h / 2);
@@ -1287,7 +1294,7 @@ class LoraRowWidget {
     drawDragHandle(ctx, dragRect);
     x += dragRect.w + 7;
 
-    const toggleRect = { x, y: controlY, w: 44, h: 22 };
+    const toggleRect = { x, y: controlY, w: 50, h: 22 };
     this.hitAreas.toggle = toggleRect;
     this.drawToggle(ctx, toggleRect);
     x += toggleRect.w + 8;
@@ -1323,7 +1330,7 @@ class LoraRowWidget {
     const controlY = rect.y + (rect.h - 20) / 2;
     const loraRect = { x: rect.x + 22, y: controlY, w: Math.max(40, rect.w - 84), h: 20 };
     const strengthRect = { x: rect.x + rect.w - 58, y: controlY, w: 52, h: 20 };
-    const toggleRect = { x: rect.x + 2, y: controlY, w: 42, h: 20 };
+    const toggleRect = { x: rect.x + 2, y: controlY, w: 50, h: 20 };
     const isSlot2 = role === "2";
     const isSlot1 = role === "1";
 
@@ -1356,7 +1363,7 @@ class LoraRowWidget {
     ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.font = "12px sans-serif";
+    setNativeWidgetFont(ctx);
     const rolePrefix = this.node.isDualChain ? `${role}: ` : "";
     ctx.fillText(fitText(ctx, `${rolePrefix}${rowDisplayName(this.row, role)}`, loraRect.w), loraRect.x, loraRect.y + loraRect.h / 2);
 
@@ -1649,7 +1656,7 @@ class LoraSettingsWidget {
     ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.font = "11px sans-serif";
+    setNativeWidgetFont(ctx);
     ctx.fillText("Exclusive", rowX + 10, exclusiveY + 11);
     this.hitAreas.exclusive = exclusiveRect;
     drawGreenPillToggle(ctx, exclusiveRect, !!node.exclusive);
