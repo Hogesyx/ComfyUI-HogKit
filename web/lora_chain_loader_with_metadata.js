@@ -8,6 +8,34 @@ const ROW_HEIGHT = 64;
 let notesTooltip = null;
 let notesTooltipHideTimer = null;
 
+function nativeFontCss(size = Number(LiteGraph.NODE_SUBTEXT_SIZE) || 12) {
+  return `normal ${size}px ${LiteGraph.NODE_FONT || "Inter"}`;
+}
+
+function nativeMonoFontCss(size = Number(LiteGraph.NODE_SUBTEXT_SIZE) || 12) {
+  return `${size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+}
+
+function nativeSurfaceColor() {
+  return LiteGraph.NODE_DEFAULT_BGCOLOR || "#222";
+}
+
+function nativeWidgetColor() {
+  return LiteGraph.WIDGET_BGCOLOR || nativeSurfaceColor();
+}
+
+function nativeBorderColor() {
+  return LiteGraph.WIDGET_OUTLINE_COLOR || "#666";
+}
+
+function nativeTextColor() {
+  return LiteGraph.WIDGET_TEXT_COLOR || "#ddd";
+}
+
+function nativeMutedTextColor() {
+  return LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
+}
+
 function cancelNotesTooltipHide() {
   if (notesTooltipHideTimer !== null) {
     window.clearTimeout(notesTooltipHideTimer);
@@ -44,10 +72,11 @@ function showNotesTooltip(title, notes, event) {
     notesTooltip.style.padding = "10px 12px";
     notesTooltip.style.border = `1px solid ${LiteGraph.WIDGET_OUTLINE_COLOR || "#666"}`;
     notesTooltip.style.borderRadius = "6px";
-    notesTooltip.style.background = "rgba(24, 24, 24, 0.98)";
+    notesTooltip.style.background = nativeSurfaceColor();
     notesTooltip.style.boxShadow = "0 8px 28px rgba(0, 0, 0, 0.55)";
-    notesTooltip.style.color = LiteGraph.WIDGET_TEXT_COLOR || "#eee";
-    notesTooltip.style.font = "12px/1.45 sans-serif";
+    notesTooltip.style.color = nativeTextColor();
+    notesTooltip.style.font = nativeFontCss();
+    notesTooltip.style.lineHeight = "1.45";
     notesTooltip.style.whiteSpace = "pre-wrap";
     notesTooltip.style.overflowWrap = "anywhere";
     notesTooltip.addEventListener("pointerenter", cancelNotesTooltipHide);
@@ -60,7 +89,7 @@ function showNotesTooltip(title, notes, event) {
   heading.textContent = title || "LoRA notes";
   heading.style.marginBottom = "6px";
   heading.style.fontWeight = "600";
-  heading.style.color = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#bbb";
+  heading.style.color = nativeMutedTextColor();
   const body = document.createElement("div");
   body.textContent = content;
   notesTooltip.append(heading, body);
@@ -552,11 +581,12 @@ function createButton(label, onClick) {
   const button = document.createElement("button");
   button.textContent = label;
   button.style.padding = "6px 12px";
-  button.style.border = "1px solid #555";
+  button.style.border = `1px solid ${nativeBorderColor()}`;
   button.style.borderRadius = "4px";
-  button.style.background = "#2b2b2b";
-  button.style.color = "#ddd";
+  button.style.background = nativeWidgetColor();
+  button.style.color = nativeTextColor();
   button.style.cursor = "pointer";
+  button.style.font = nativeFontCss();
   button.addEventListener("click", onClick);
   return button;
 }
@@ -574,8 +604,8 @@ function buildMetadataFieldsPanel(initialMetadata = {}) {
   panel.style.gridTemplateColumns = "1fr 1fr";
   panel.style.gap = "8px";
   panel.style.padding = "8px 12px";
-  panel.style.borderBottom = "1px solid #333";
-  panel.style.background = "#181818";
+  panel.style.borderBottom = `1px solid ${nativeBorderColor()}`;
+  panel.style.background = nativeSurfaceColor();
 
   const makeField = (label, multiline = false) => {
     const wrap = document.createElement("div");
@@ -584,19 +614,19 @@ function buildMetadataFieldsPanel(initialMetadata = {}) {
     wrap.style.gap = "4px";
     const title = document.createElement("div");
     title.textContent = label;
-    title.style.font = "11px sans-serif";
-    title.style.color = "#bbb";
+    title.style.font = nativeFontCss();
+    title.style.color = nativeMutedTextColor();
     title.style.whiteSpace = "nowrap";
     title.style.overflow = "hidden";
     title.style.textOverflow = "ellipsis";
     const input = multiline ? document.createElement("textarea") : document.createElement("input");
     input.spellcheck = false;
-    input.style.background = "#101010";
-    input.style.color = "#ddd";
-    input.style.border = "1px solid #444";
+    input.style.background = nativeWidgetColor();
+    input.style.color = nativeTextColor();
+    input.style.border = `1px solid ${nativeBorderColor()}`;
     input.style.borderRadius = "4px";
     input.style.padding = "6px 8px";
-    input.style.font = multiline ? "11px Consolas, monospace" : "11px sans-serif";
+    input.style.font = multiline ? nativeMonoFontCss() : nativeFontCss();
     input.style.minHeight = multiline ? "52px" : "28px";
     if (multiline) {
       input.style.resize = "vertical";
@@ -688,7 +718,7 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
   panel.style.maxHeight = "min(560px, calc(100vh - 64px))";
   panel.style.background = LiteGraph.WIDGET_BGCOLOR || "#222";
   panel.style.border = `1px solid ${LiteGraph.WIDGET_OUTLINE_COLOR || "#555"}`;
-  panel.style.borderRadius = "4px";
+  panel.style.borderRadius = "6px";
   panel.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.55)";
   panel.style.display = "flex";
   panel.style.flexDirection = "column";
@@ -698,7 +728,7 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
   header.style.padding = "8px 10px";
   header.style.borderBottom = `1px solid ${LiteGraph.WIDGET_OUTLINE_COLOR || "#444"}`;
   header.style.color = LiteGraph.WIDGET_TEXT_COLOR || "#eee";
-  header.style.font = "12px sans-serif";
+  header.style.font = nativeFontCss();
   header.textContent = "Select LoRA";
 
   const search = document.createElement("input");
@@ -711,7 +741,7 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
   search.style.background = LiteGraph.NODE_DEFAULT_BGCOLOR || "#111";
   search.style.color = LiteGraph.WIDGET_TEXT_COLOR || "#ddd";
   search.style.outline = "0";
-  search.style.font = "12px sans-serif";
+  search.style.font = nativeFontCss();
 
   const list = document.createElement("div");
   list.style.flex = "1";
@@ -765,7 +795,7 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
       row.style.background = "transparent";
       row.style.color = LiteGraph.WIDGET_TEXT_COLOR || "#ddd";
       row.style.textAlign = "left";
-      row.style.font = "12px sans-serif";
+      row.style.font = nativeFontCss();
       row.style.cursor = "pointer";
       row.style.whiteSpace = "nowrap";
       row.style.overflow = "hidden";
@@ -785,7 +815,7 @@ function showLoraChooser(loras, onSelect, currentValue = "None") {
       const empty = document.createElement("div");
       empty.textContent = "No matches";
       empty.style.padding = "16px";
-      empty.style.color = "#999";
+      empty.style.color = nativeMutedTextColor();
       list.append(empty);
     }
     setActive(activeIndex < 0 ? 0 : activeIndex);
@@ -883,8 +913,8 @@ async function showSingleMetadataEditor(row, node, role = "1") {
   const panel = document.createElement("div");
   panel.style.width = "min(980px, calc(100vw - 64px))";
   panel.style.height = "min(760px, calc(100vh - 64px))";
-  panel.style.background = "#1f1f1f";
-  panel.style.border = "1px solid #555";
+  panel.style.background = nativeSurfaceColor();
+  panel.style.border = `1px solid ${nativeBorderColor()}`;
   panel.style.borderRadius = "6px";
   panel.style.boxShadow = "0 16px 60px rgba(0, 0, 0, 0.5)";
   panel.style.display = "flex";
@@ -893,16 +923,16 @@ async function showSingleMetadataEditor(row, node, role = "1") {
 
   const header = document.createElement("div");
   header.style.padding = "12px 14px";
-  header.style.borderBottom = "1px solid #444";
-  header.style.color = "#eee";
-  header.style.font = "13px sans-serif";
+  header.style.borderBottom = `1px solid ${nativeBorderColor()}`;
+  header.style.color = nativeTextColor();
+  header.style.font = nativeFontCss(Number(LiteGraph.NODE_TEXT_SIZE) || 14);
   header.textContent = `Metadata JSON ${role} - ${lora}`;
 
   const path = document.createElement("div");
   path.style.padding = "8px 14px";
-  path.style.color = "#aaa";
-  path.style.font = "11px monospace";
-  path.style.borderBottom = "1px solid #333";
+  path.style.color = nativeMutedTextColor();
+  path.style.font = nativeMonoFontCss();
+  path.style.borderBottom = `1px solid ${nativeBorderColor()}`;
   path.textContent = payload.metadata_path || "";
 
   const textarea = document.createElement("textarea");
@@ -913,9 +943,9 @@ async function showSingleMetadataEditor(row, node, role = "1") {
   textarea.style.border = "0";
   textarea.style.outline = "0";
   textarea.style.padding = "14px";
-  textarea.style.background = "#111";
-  textarea.style.color = "#ddd";
-  textarea.style.font = "12px Consolas, monospace";
+  textarea.style.background = nativeWidgetColor();
+  textarea.style.color = nativeTextColor();
+  textarea.style.font = nativeMonoFontCss();
   textarea.style.lineHeight = "1.45";
   const fields = buildMetadataFieldsPanel(payload.metadata || {});
   const syncJsonFromFields = () => {
@@ -946,13 +976,13 @@ async function showSingleMetadataEditor(row, node, role = "1") {
   footer.style.gap = "8px";
   footer.style.justifyContent = "flex-end";
   footer.style.padding = "10px 14px";
-  footer.style.borderTop = "1px solid #444";
+  footer.style.borderTop = `1px solid ${nativeBorderColor()}`;
 
   const status = document.createElement("span");
   status.style.marginRight = "auto";
   status.style.alignSelf = "center";
-  status.style.color = "#aaa";
-  status.style.font = "12px sans-serif";
+  status.style.color = nativeMutedTextColor();
+  status.style.font = nativeFontCss();
 
   const close = () => document.body.removeChild(overlay);
   const saveButton = createButton("Save & Close", async () => {
@@ -1026,8 +1056,8 @@ async function showDualMetadataEditor(row, node) {
   const panel = document.createElement("div");
   panel.style.width = "min(1180px, calc(100vw - 64px))";
   panel.style.height = "min(780px, calc(100vh - 64px))";
-  panel.style.background = "#1f1f1f";
-  panel.style.border = "1px solid #555";
+  panel.style.background = nativeSurfaceColor();
+  panel.style.border = `1px solid ${nativeBorderColor()}`;
   panel.style.borderRadius = "6px";
   panel.style.boxShadow = "0 16px 60px rgba(0, 0, 0, 0.5)";
   panel.style.display = "flex";
@@ -1036,9 +1066,9 @@ async function showDualMetadataEditor(row, node) {
 
   const header = document.createElement("div");
   header.style.padding = "12px 14px";
-  header.style.borderBottom = "1px solid #444";
-  header.style.color = "#eee";
-  header.style.font = "13px sans-serif";
+  header.style.borderBottom = `1px solid ${nativeBorderColor()}`;
+  header.style.color = nativeTextColor();
+  header.style.font = nativeFontCss(Number(LiteGraph.NODE_TEXT_SIZE) || 14);
   header.textContent = "Metadata JSON - LoRA 1 / LoRA 2";
 
   const editors = document.createElement("div");
@@ -1055,16 +1085,16 @@ async function showDualMetadataEditor(row, node) {
 
     const title = document.createElement("div");
     title.style.padding = "8px 12px";
-    title.style.borderBottom = "1px solid #333";
-    title.style.color = "#ddd";
-    title.style.font = "12px sans-serif";
+    title.style.borderBottom = `1px solid ${nativeBorderColor()}`;
+    title.style.color = nativeTextColor();
+    title.style.font = nativeFontCss();
     title.textContent = `${label} - ${lora}`;
 
     const path = document.createElement("div");
     path.style.padding = "6px 12px";
-    path.style.color = "#aaa";
-    path.style.font = "10px monospace";
-    path.style.borderBottom = "1px solid #333";
+    path.style.color = nativeMutedTextColor();
+    path.style.font = nativeMonoFontCss();
+    path.style.borderBottom = `1px solid ${nativeBorderColor()}`;
     path.style.whiteSpace = "nowrap";
     path.style.overflow = "hidden";
     path.style.textOverflow = "ellipsis";
@@ -1078,9 +1108,9 @@ async function showDualMetadataEditor(row, node) {
     textarea.style.border = "0";
     textarea.style.outline = "0";
     textarea.style.padding = "14px";
-    textarea.style.background = "#111";
-    textarea.style.color = "#ddd";
-    textarea.style.font = "12px Consolas, monospace";
+    textarea.style.background = nativeWidgetColor();
+    textarea.style.color = nativeTextColor();
+    textarea.style.font = nativeMonoFontCss();
     textarea.style.lineHeight = "1.45";
     const fields = buildMetadataFieldsPanel(payload.metadata || {});
     wrap.append(title, path, fields.panel, textarea);
@@ -1138,8 +1168,8 @@ async function showDualMetadataEditor(row, node) {
   syncBar.style.alignItems = "center";
   syncBar.style.justifyContent = "center";
   syncBar.style.padding = "0 10px";
-  syncBar.style.borderLeft = "1px solid #333";
-  syncBar.style.borderRight = "1px solid #333";
+  syncBar.style.borderLeft = `1px solid ${nativeBorderColor()}`;
+  syncBar.style.borderRight = `1px solid ${nativeBorderColor()}`;
   syncBar.append(
     createButton("> > >", () => {
       right.textarea.value = left.textarea.value;
@@ -1166,13 +1196,13 @@ async function showDualMetadataEditor(row, node) {
   footer.style.gap = "8px";
   footer.style.justifyContent = "flex-end";
   footer.style.padding = "10px 14px";
-  footer.style.borderTop = "1px solid #444";
+  footer.style.borderTop = `1px solid ${nativeBorderColor()}`;
 
   const status = document.createElement("span");
   status.style.marginRight = "auto";
   status.style.alignSelf = "center";
-  status.style.color = "#aaa";
-  status.style.font = "12px sans-serif";
+  status.style.color = nativeMutedTextColor();
+  status.style.font = nativeFontCss();
 
   const close = () => document.body.removeChild(overlay);
   const saveButton = createButton("Save & Close", async () => {

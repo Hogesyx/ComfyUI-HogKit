@@ -110,8 +110,8 @@ function ensureDisplayWidget(node) {
     app,
   ).widget;
   widget.inputEl.readOnly = true;
-  widget.inputEl.style.opacity = 0.65;
   widget.options = widget.options || {};
+  widget.options.read_only = true;
   widget.options.minNodeSize = [240, 100];
   widget.options.getMinHeight = () => 64;
   widget.options.getMaxHeight = () => 160;

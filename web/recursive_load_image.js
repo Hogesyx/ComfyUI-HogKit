@@ -5,6 +5,30 @@ const IMAGE_WIDGET = "image";
 const SELECTOR_WIDGET = "image_selector";
 let activePicker = null;
 
+function nativeFontCss(size = Number(LiteGraph.NODE_SUBTEXT_SIZE) || 12) {
+  return `normal ${size}px ${LiteGraph.NODE_FONT || "Inter"}`;
+}
+
+function nativeSurfaceColor() {
+  return LiteGraph.NODE_DEFAULT_BGCOLOR || "#222";
+}
+
+function nativeWidgetColor() {
+  return LiteGraph.WIDGET_BGCOLOR || nativeSurfaceColor();
+}
+
+function nativeBorderColor() {
+  return LiteGraph.WIDGET_OUTLINE_COLOR || "#666";
+}
+
+function nativeTextColor() {
+  return LiteGraph.WIDGET_TEXT_COLOR || "#ddd";
+}
+
+function nativeMutedTextColor() {
+  return LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#aaa";
+}
+
 function getInputOptions(nodeData) {
   const input = nodeData?.input?.required?.[IMAGE_WIDGET]
     || nodeData?.input?.optional?.[IMAGE_WIDGET];
@@ -154,11 +178,12 @@ function makeButton(label, callback) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = label;
-  button.style.background = "#333";
-  button.style.border = "1px solid #666";
-  button.style.borderRadius = "3px";
-  button.style.color = "#ddd";
+  button.style.background = nativeWidgetColor();
+  button.style.border = `1px solid ${nativeBorderColor()}`;
+  button.style.borderRadius = "6px";
+  button.style.color = nativeTextColor();
   button.style.cursor = "pointer";
+  button.style.font = nativeFontCss();
   button.style.padding = "4px 8px";
   button.addEventListener("click", callback);
   return button;
@@ -168,10 +193,10 @@ function addImageItem(list, node, image, close) {
   const item = document.createElement("button");
   item.type = "button";
   item.style.alignItems = "center";
-  item.style.background = image === node.selectedImage ? "#454f61" : "#292929";
-  item.style.border = "1px solid #4a4a4a";
-  item.style.borderRadius = "4px";
-  item.style.color = "#ddd";
+  item.style.background = image === node.selectedImage ? nativeBorderColor() : nativeWidgetColor();
+  item.style.border = `1px solid ${nativeBorderColor()}`;
+  item.style.borderRadius = "6px";
+  item.style.color = nativeTextColor();
   item.style.cursor = "pointer";
   item.style.display = "flex";
   item.style.gap = "8px";
@@ -180,12 +205,13 @@ function addImageItem(list, node, image, close) {
   item.style.padding = "4px";
   item.style.textAlign = "left";
   item.style.width = "100%";
+  item.style.font = nativeFontCss();
 
   const thumbnail = document.createElement("img");
   thumbnail.alt = "";
   thumbnail.loading = "lazy";
   thumbnail.src = imagePreviewUrl(image);
-  thumbnail.style.background = "#111";
+  thumbnail.style.background = nativeSurfaceColor();
   thumbnail.style.height = "62px";
   thumbnail.style.objectFit = "contain";
   thumbnail.style.width = "62px";
@@ -217,8 +243,8 @@ function renderImagePicker(picker, node) {
     if (folder === rootFolder) {
       const heading = document.createElement("div");
       heading.textContent = folder;
-      heading.style.color = "#aaa";
-      heading.style.fontSize = "11px";
+      heading.style.color = nativeMutedTextColor();
+      heading.style.font = nativeFontCss();
       heading.style.margin = "4px 0";
       content.append(heading);
       const list = document.createElement("div");
@@ -233,7 +259,7 @@ function renderImagePicker(picker, node) {
     group.style.marginTop = "6px";
     const summary = document.createElement("summary");
     summary.textContent = `${folder} (${files.length})`;
-    summary.style.color = "#ccc";
+    summary.style.color = nativeTextColor();
     summary.style.cursor = "pointer";
     summary.style.padding = "5px 2px";
     group.append(summary);
@@ -250,7 +276,7 @@ function renderImagePicker(picker, node) {
   if (!folders.length || folders.every((folder) => !choices[folder]?.length)) {
     const empty = document.createElement("div");
     empty.textContent = "No images found.";
-    empty.style.color = "#aaa";
+    empty.style.color = nativeMutedTextColor();
     empty.style.padding = "12px 4px";
     content.append(empty);
   }
@@ -289,11 +315,11 @@ function showImagePicker(node, event) {
   closeImagePicker();
 
   const popup = document.createElement("div");
-  popup.style.background = "#202020";
-  popup.style.border = "1px solid #666";
-  popup.style.borderRadius = "5px";
+  popup.style.background = nativeSurfaceColor();
+  popup.style.border = `1px solid ${nativeBorderColor()}`;
+  popup.style.borderRadius = "8px";
   popup.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.45)";
-  popup.style.color = "#ddd";
+  popup.style.color = nativeTextColor();
   popup.style.maxHeight = "520px";
   popup.style.maxWidth = "520px";
   popup.style.minWidth = "320px";
@@ -301,6 +327,7 @@ function showImagePicker(node, event) {
   popup.style.padding = "8px";
   popup.style.position = "fixed";
   popup.style.zIndex = "10000";
+  popup.style.font = nativeFontCss();
 
   const header = document.createElement("div");
   header.style.alignItems = "center";
@@ -400,7 +427,7 @@ function drawCanvasButton(ctx, rect, label) {
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
-  ctx.font = "12px sans-serif";
+  ctx.font = nativeFontCss();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
@@ -452,7 +479,7 @@ class ImageSelectorWidget {
     ctx.stroke();
 
     ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
-    ctx.font = "12px sans-serif";
+    ctx.font = nativeFontCss();
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillText(fitText(ctx, this.value || "Select an image", selectWidth - 28), 8, top + height / 2);

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.8
+
+### Changed
+
+- Aligned HogKit's custom LoRA dialogs, metadata fields, chooser, tooltip, and recursive image picker with ComfyUI's runtime font, widget colors, text colors, borders, and spacing instead of fixed dark-theme CSS values.
+- Kept JSON/metadata editing monospace while matching ComfyUI's native text scale.
+- Marked Show Convert Anything's display as a proper read-only widget instead of dimming it with a custom opacity override.
+
+### Fixed
+
+- Matched the recursive image selector's canvas text to ComfyUI's native widget font so it renders consistently with built-in node controls.
+
 ## 0.2.7
 
 ### Fixed
