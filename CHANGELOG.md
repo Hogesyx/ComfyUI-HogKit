@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9
+
+### Added
+
+- HogKit Image Scaler maps input images to standard aspect ratios and aligned dimensions, with an optional megapixel override and Closest / At least target MP / At most target MP rules.
+- Pad, Crop, and Stretch fitting, positioning, padding color, interpolation, actual megapixel and resolution outputs, and a read-only result display after execution.
+- Floating-point resampling preserves image precision and grayscale/RGB/RGBA channels. Existing Qwen Image Scaler workflows remain available.
+
 ## 0.2.8
 
 ### Changed

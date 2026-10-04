@@ -55,7 +55,22 @@ Both chain loaders support the classic canvas and Nodes 2.0 renderers. The node 
 
 - **HogKit Load Image** loads images from the ComfyUI input directory or one-level subfolders. Use the folder selector to filter images, the refresh button to rescan the input directory, and the native upload control to browse for a new image. The selected image is previewed on the node.
 - **HogKit Auto Resolution Selector** selects a stock aspect ratio and target dimensions from an image or override dimensions. It passes the image through and outputs `width` and `height`.
+- **HogKit Image Scaler** maps an image to a standard aspect ratio, resolves aligned output dimensions, then pads, crops, or stretches it. It outputs the image, width, height, actual megapixels, and a resolution summary.
 - **HogKit Qwen Image Scaler** pads or crops images to the selected Qwen Image resolution.
+
+#### HogKit Image Scaler
+
+1. Choose an aspect ratio, or **Auto** for the closest standard ratio to the input. Auto compares proportional ratio differences consistently for portrait and landscape images.
+2. Set **megapixels** to **0** to use the input pixel area, or enter an explicit target. As in ComfyUI's Resolution Selector, 1 MP means 1024 × 1024 pixels.
+3. Set **multiple** to the required dimension alignment (default 32). **0** uses the standard alignment of 8; it does not infer model requirements from image dimensions.
+4. Choose **Closest**, **At least target MP**, or **At most target MP**. The latter two constrain total pixel area, rather than requiring each dimension to be larger or smaller than the input. The aligned size balances proportional area and aspect-ratio error around the ideal target.
+5. Choose **Pad** to retain the entire image, **Crop** to fill the canvas, or **Stretch** to change its proportions. Positioning, padding color, and resampling are under advanced inputs. These fitting controls do not change the resolved output dimensions.
+
+Alignment can change the final ratio and actual MP slightly. The result display updates after execution, when the backend knows the connected image dimensions. The `resolution` output also contains this summary. Images can be enlarged or reduced in all fitting modes; there is no separate scale-mode selector.
+
+This node calculates generic dimensions; it does not select Qwen's exact recommended resolution buckets. For example, requesting 4 MP and multiple 32 is not a guarantee of Qwen's 2400 × 1792 bucket.
+
+Padding accepts PIL color names and hex colors, including alpha for RGBA images. Invalid padding colors report an error. Grayscale, RGB, RGBA, and image batches retain their channels and floating-point precision.
 
 The HogKit Load Image selector supports both the main Nodes 2.0 node and sidebar at different widths. Selecting or uploading an image updates both views without changing either view's control hitboxes.
 

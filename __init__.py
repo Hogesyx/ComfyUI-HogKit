@@ -4,7 +4,7 @@ from .lora_nodes import (
     LoraLoaderWithPromptSingle,
     LoraSingleChainLoaderWithMetadata,
 )
-from .image_nodes import AutoResolutionSelector, QwenImageScaler, RecursiveLoadImage
+from .image_nodes import AutoResolutionSelector, ImageScaler, QwenImageScaler, RecursiveLoadImage
 from .utility_nodes import (
     BooleanFallback,
     FloatFallback,
@@ -27,6 +27,7 @@ class PluginExtension(ComfyExtension):
             LoraDualChainLoaderWithMetadata,
             RecursiveLoadImage,
             AutoResolutionSelector,
+            ImageScaler,
             QwenImageScaler,
             NodeStatus,
             NodeStatusIfElseSwitch,
