@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.10
+
+### Changed
+
+- Image Scaler crops or pads original pixels to the selected ratio before applying MP and alignment rules, then resamples once at the end.
+- With megapixels set to 0, Pad uses padded area and Crop uses cropped area as the target. Stretch keeps the input area. Explicit MP overrides the fitted area.
+- The result display includes the intermediate fit dimensions.
+
 ## 0.2.9
 
 ### Added

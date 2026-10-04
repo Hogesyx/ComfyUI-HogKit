@@ -55,18 +55,20 @@ Both chain loaders support the classic canvas and Nodes 2.0 renderers. The node 
 
 - **HogKit Load Image** loads images from the ComfyUI input directory or one-level subfolders. Use the folder selector to filter images, the refresh button to rescan the input directory, and the native upload control to browse for a new image. The selected image is previewed on the node.
 - **HogKit Auto Resolution Selector** selects a stock aspect ratio and target dimensions from an image or override dimensions. It passes the image through and outputs `width` and `height`.
-- **HogKit Image Scaler** maps an image to a standard aspect ratio, resolves aligned output dimensions, then pads, crops, or stretches it. It outputs the image, width, height, actual megapixels, and a resolution summary.
+- **HogKit Image Scaler** crops or pads an image to a standard aspect ratio at source resolution, then resizes once to aligned output dimensions. It outputs the image, width, height, actual megapixels, and a resolution summary.
 - **HogKit Qwen Image Scaler** pads or crops images to the selected Qwen Image resolution.
 
 #### HogKit Image Scaler
 
 1. Choose an aspect ratio, or **Auto** for the closest standard ratio to the input. Auto compares proportional ratio differences consistently for portrait and landscape images.
-2. Set **megapixels** to **0** to use the input pixel area, or enter an explicit target. As in ComfyUI's Resolution Selector, 1 MP means 1024 × 1024 pixels.
-3. Set **multiple** to the required dimension alignment (default 32). **0** uses the standard alignment of 8; it does not infer model requirements from image dimensions.
-4. Choose **Closest**, **At least target MP**, or **At most target MP**. The latter two constrain total pixel area, rather than requiring each dimension to be larger or smaller than the input. The aligned size balances proportional area and aspect-ratio error around the ideal target.
-5. Choose **Pad** to retain the entire image, **Crop** to fill the canvas, or **Stretch** to change its proportions. Positioning, padding color, and resampling are under advanced inputs. These fitting controls do not change the resolved output dimensions.
+2. Choose **Pad** to add borders at source resolution, **Crop** to trim original pixels to the selected ratio, or **Stretch** to change proportions during the final resize. Positioning, padding color, and resampling are under advanced inputs.
+3. Set **megapixels** to **0** to use the fitted pixel area, or enter an explicit target. Pad includes added borders in the area; Crop uses the remaining image area; Stretch uses the original input area. As in ComfyUI's Resolution Selector, 1 MP means 1024 × 1024 pixels.
+4. Set **multiple** to the required dimension alignment (default 32). **0** uses the standard alignment of 8; it does not infer model requirements from image dimensions.
+5. Choose **Closest**, **At least target MP**, or **At most target MP**. The latter two constrain total pixel area relative to the fitted area or explicit MP override. The aligned size balances proportional area and aspect-ratio error around the ideal target.
 
-Alignment can change the final ratio and actual MP slightly. The result display updates after execution, when the backend knows the connected image dimensions. The `resolution` output also contains this summary. Images can be enlarged or reduced in all fitting modes; there is no separate scale-mode selector.
+For example, a 1600 × 900 input fitted to square has a 1600 × 1600 Pad canvas or a 900 × 900 Crop region. With MP 0, alignment and the resolution rule apply to those respective areas. With an explicit 1 MP target, both resolve to a 1024 × 1024 output when the multiple allows it. Crop and Pad operate without interpolation; resampling happens once, after fitting.
+
+Alignment can change the final ratio and actual MP slightly. The result display updates after execution and includes source, fit, and output dimensions. The `resolution` output also contains this summary. Images can be enlarged or reduced in all fitting modes; there is no separate scale-mode selector.
 
 This node calculates generic dimensions; it does not select Qwen's exact recommended resolution buckets. For example, requesting 4 MP and multiple 32 is not a guarantee of Qwen's 2400 × 1792 bucket.
 

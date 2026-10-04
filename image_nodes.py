@@ -298,19 +298,19 @@ class ImageScaler(io.ComfyNode):
             node_id="HogKitImageScaler",
             display_name="HogKit Image Scaler",
             category="HogKit/Image",
-            description="Map an image to a standard aspect ratio and aligned resolution. Zero megapixels uses the input pixel area.",
+            description="Crop or pad to a standard ratio at source resolution, then resize once to aligned dimensions. Zero megapixels uses the fitted pixel area.",
             inputs=[
                 io.Image.Input("image"),
                 io.Combo.Input("aspect_ratio", options=["Auto", *RESOLUTION_ASPECT_RATIOS], default="Auto",
                                tooltip="Auto selects the closest standard ratio to the input image."),
                 io.Float.Input("megapixels", default=0.0, min=0.0, max=16.0, step=0.1,
-                               tooltip="0 uses input pixel area. Positive values override it. 1 MP = 1024 × 1024 pixels."),
+                               tooltip="0 uses pixel area after cropping or padding. Stretch uses input area. Positive values override it. 1 MP = 1024 × 1024 pixels."),
                 io.Int.Input("multiple", default=32, min=0, max=128, step=1,
                              tooltip="Both dimensions must be divisible by this value. 0 uses the standard alignment of 8."),
                 io.Combo.Input("resolution_rule", options=cls.RULES, default="Closest",
                                tooltip="Choose the nearest aligned size, or constrain output pixel area to at least/at most the target."),
                 io.Combo.Input("fit", options=["Pad", "Crop", "Stretch"], default="Pad",
-                               tooltip="Pad keeps the whole image; Crop fills the canvas; Stretch changes its proportions."),
+                               tooltip="Fit to the ratio first: Pad adds source-resolution borders, Crop trims the source, Stretch changes proportions. Then apply MP and alignment rules."),
                 io.Combo.Input("horizontal_bias", options=["center", "left", "right"], default="center", advanced=True),
                 io.Combo.Input("vertical_bias", options=["center", "top", "bottom"], default="center", advanced=True),
                 io.String.Input("padding_color", default="#000000", advanced=True,
@@ -332,12 +332,7 @@ class ImageScaler(io.ComfyNode):
         multiple = int(multiple) or 8
         if resolution_rule not in ImageScaler.RULES:
             raise ValueError(f"Unknown resolution rule: {resolution_rule}")
-        if aspect_ratio == "Auto":
-            source_ratio = source_width / source_height
-            aspect_ratio = min(RESOLUTION_ASPECT_RATIOS, key=lambda name:
-                               abs(math.log((RESOLUTION_ASPECT_RATIOS[name][0] / RESOLUTION_ASPECT_RATIOS[name][1]) / source_ratio)))
-        if aspect_ratio not in RESOLUTION_ASPECT_RATIOS:
-            raise ValueError(f"Unknown aspect ratio: {aspect_ratio}")
+        aspect_ratio = ImageScaler._select_ratio(source_width, source_height, aspect_ratio)
         a, b = RESOLUTION_ASPECT_RATIOS[aspect_ratio]
         target = megapixels * 1024 * 1024 if megapixels else source_width * source_height
         ideal_w = math.sqrt(target * a / b)
@@ -367,6 +362,29 @@ class ImageScaler(io.ComfyNode):
         return best[2], best[3], aspect_ratio
 
     @staticmethod
+    def _select_ratio(width, height, aspect_ratio):
+        if aspect_ratio == "Auto":
+            source_ratio = width / height
+            return min(RESOLUTION_ASPECT_RATIOS, key=lambda name:
+                       abs(math.log((RESOLUTION_ASPECT_RATIOS[name][0] / RESOLUTION_ASPECT_RATIOS[name][1]) / source_ratio)))
+        if aspect_ratio not in RESOLUTION_ASPECT_RATIOS:
+            raise ValueError(f"Unknown aspect ratio: {aspect_ratio}")
+        return aspect_ratio
+
+    @staticmethod
+    def _fit_dimensions(width, height, aspect_ratio, fit):
+        a, b = RESOLUTION_ASPECT_RATIOS[aspect_ratio]
+        if fit == "Stretch":
+            return width, height
+        if width * b >= height * a:
+            if fit == "Pad":
+                return width, (width * b + a - 1) // a
+            return max(1, height * a // b), height
+        if fit == "Pad":
+            return (height * a + b - 1) // b, height
+        return width, max(1, width * b // a)
+
+    @staticmethod
     def _align_offset(container, content, bias):
         if bias == "center":
             return (container - content) // 2
@@ -391,45 +409,42 @@ class ImageScaler(io.ComfyNode):
     def execute(cls, image, aspect_ratio="Auto", megapixels=0.0, multiple=32,
                 resolution_rule="Closest", fit="Pad", horizontal_bias="center",
                 vertical_bias="center", padding_color="#000000", resample="lanczos"):
-        if image.ndim != 4 or image.shape[0] < 1 or image.shape[-1] not in (1, 3, 4):
+        if image.ndim != 4 or image.shape[0] < 1 or min(image.shape[1:3]) < 1 or image.shape[-1] not in (1, 3, 4):
             raise ValueError("Expected a nonempty IMAGE batch with 1, 3, or 4 channels.")
         if resample not in RESAMPLE_METHODS or fit not in ("Pad", "Crop", "Stretch"):
             raise ValueError("Unknown fit or resampling method.")
         if horizontal_bias not in ("center", "left", "right") or vertical_bias not in ("center", "top", "bottom"):
             raise ValueError("Unknown image alignment.")
         source_h, source_w = image.shape[1:3]
-        width, height, ratio = cls.select_resolution(source_w, source_h, aspect_ratio,
+        ratio = cls._select_ratio(source_w, source_h, aspect_ratio)
+        fitted_w, fitted_h = cls._fit_dimensions(source_w, source_h, ratio, fit)
+        width, height, _ = cls.select_resolution(fitted_w, fitted_h, ratio,
                                                     megapixels, multiple, resolution_rule)
-        if fit == "Stretch":
-            result = cls._resize(image, width, height, resample)
-        else:
-            factor = (min if fit == "Pad" else max)(width / source_w, height / source_h)
-            if fit == "Pad":
-                resized_w = min(width, max(1, round(source_w * factor)))
-                resized_h = min(height, max(1, round(source_h * factor)))
-            else:
-                resized_w = max(width, math.ceil(source_w * factor))
-                resized_h = max(height, math.ceil(source_h * factor))
-            resized = cls._resize(image, resized_w, resized_h, resample)
-            if fit == "Crop":
-                x = cls._align_offset(resized_w, width, horizontal_bias)
-                y = cls._align_offset(resized_h, height, vertical_bias)
-                result = resized[:, y:y + height, x:x + width, :]
-            else:
-                mode = {1: "L", 3: "RGB", 4: "RGBA"}[image.shape[-1]]
-                try:
-                    color = ImageColor.getcolor(padding_color, mode)
-                except (ValueError, TypeError) as error:
-                    raise ValueError(f"Invalid padding color: {padding_color}") from error
+        # Crop and pad operate on original pixels. Only the final operation
+        # interpolates, so fit does not introduce a preliminary resize.
+        fitted = image
+        if fit == "Crop":
+            x = cls._align_offset(source_w, fitted_w, horizontal_bias)
+            y = cls._align_offset(source_h, fitted_h, vertical_bias)
+            fitted = image[:, y:y + fitted_h, x:x + fitted_w, :]
+        elif fit == "Pad":
+            mode = {1: "L", 3: "RGB", 4: "RGBA"}[image.shape[-1]]
+            try:
+                color = ImageColor.getcolor(padding_color, mode)
+            except (ValueError, TypeError) as error:
+                raise ValueError(f"Invalid padding color: {padding_color}") from error
+            if (fitted_w, fitted_h) != (source_w, source_h):
                 values = (color,) if isinstance(color, int) else color
                 background = image.new_tensor(values).div(255)
-                result = background.view(1, 1, 1, -1).expand(image.shape[0], height, width, -1).clone()
-                x = cls._align_offset(width, resized_w, horizontal_bias)
-                y = cls._align_offset(height, resized_h, vertical_bias)
-                result[:, y:y + resized_h, x:x + resized_w, :] = resized
+                fitted = background.view(1, 1, 1, -1).expand(image.shape[0], fitted_h, fitted_w, -1).clone()
+                x = cls._align_offset(fitted_w, source_w, horizontal_bias)
+                y = cls._align_offset(fitted_h, source_h, vertical_bias)
+                fitted[:, y:y + source_h, x:x + source_w, :] = image
+        result = cls._resize(fitted, width, height, resample)
         actual_mp = width * height / (1024 * 1024)
-        summary = (f"{source_w} × {source_h} → {width} × {height}\n"
-                   f"{ratio} | actual ratio {width / height:.4f} | {actual_mp:.4f} MP | {fit}")
+        fit_summary = "Stretch" if fit == "Stretch" else f"{fit} {fitted_w} × {fitted_h}"
+        summary = (f"{source_w} × {source_h} → {fit_summary} → {width} × {height}\n"
+                   f"{ratio} | actual ratio {width / height:.4f} | {actual_mp:.4f} MP")
         return io.NodeOutput(result, width, height, actual_mp, summary, ui={"text": [summary]})
 
 
