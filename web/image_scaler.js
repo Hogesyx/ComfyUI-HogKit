@@ -33,5 +33,24 @@ app.registerExtension({
       }
       return result;
     };
+
+    const onConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (data) {
+      const result = onConfigure?.apply(this, arguments);
+      const values = data?.widgets_values;
+      // Older workflows stored MP and multiple before fit and resolution rule.
+      if (Array.isArray(values) && typeof values[1] === "number"
+          && typeof values[2] === "number" && ["Pad", "Crop", "Stretch"].includes(values[4])) {
+        const restored = {
+          aspect_ratio: values[0], fit: values[4], resolution_rule: values[3],
+          megapixels: values[1], multiple: values[2],
+        };
+        for (const [name, value] of Object.entries(restored)) {
+          const widget = this.widgets?.find(w => w.name === name);
+          if (widget) widget.value = value;
+        }
+      }
+      return result;
+    };
   },
 });

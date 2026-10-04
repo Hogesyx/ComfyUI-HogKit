@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.11
+
+### Changed
+
+- Reordered Image Scaler controls to aspect ratio, fit, resolution rule, megapixels, and multiple. Saved workflows from the previous field order retain their settings when loaded.
+
 ## 0.2.10
 
 ### Changed
