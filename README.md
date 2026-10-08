@@ -38,6 +38,26 @@ Restart ComfyUI after installation or after updating the plugin.
 - **HogKit LoRA Single Chain Loader with Metadata** applies a configurable LoRA stack to one model and optional CLIP.
 - **HogKit LoRA Dual Chain Loader with Metadata** applies paired LoRA stacks to two model/CLIP pipelines and combines prompt fragments from metadata.
 
+All four loaders automatically handle ordinary dense MiniMax H3 AdaLN LoRAs on
+pruned/curve H3 checkpoints. The conversion preserves LoRA rank and alpha and
+restores the constant term with a native additive bias patch, so strengths and
+multiple stacked LoRAs keep working. It runs only when ComfyUI identifies the
+loaded model as MiniMax H3. Qwen Image, Qwen Image 2.1, and other models use the
+native ComfyUI loader unchanged; compatible H3 pairs also stay unchanged.
+
+HogKit fits its bundled H3 timestep grid to the loaded checkpoint's curve table
+and rejects fits with relative residual above 0.005. Curve-trained LoRAs need
+their source `adaln_t_table` tensor to convert to dense models or another curve
+basis. Mismatched DoRA, LoCon, and reshape adapters are rejected rather than
+partially applied. A dimension match alone cannot identify an undocumented
+different curve basis. This addresses AdaLN basis mismatches; it cannot make a
+LoRA trained for a different architecture compatible.
+
+The helper requires no extra node or network download. Do not load the same
+LoRA again in a separate AdaLN-fix node. It does not repair patches already
+applied by upstream loaders. Resource credits are in [data/NOTICE.md](data/NOTICE.md).
+Restart ComfyUI after updating HogKit to load the Python changes.
+
 The chain loader stores metadata beside each LoRA. For example:
 
 ```text
@@ -93,12 +113,17 @@ Run these from the plugin directory:
 
 ```bash
 python -m py_compile *.py
+python -m unittest discover -s tests -p "test_lora_*.py" -v
 node --check web/node_status.js
 node --check web/show_convert_anything.js
 node --check web/lora_chain_loader_with_metadata.js
 node --test tests/lora_chain_widget.test.cjs
 node --check web/recursive_load_image.js
 ```
+
+Use ComfyUI's Python for the LoRA checks (PyTorch is required). Set
+`COMFYUI_PATH` to the directory containing ComfyUI's `nodes.py` to also run the
+optional CPU integration check against its native patcher and Qwen model classes.
 
 ## License
 

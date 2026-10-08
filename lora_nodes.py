@@ -6,7 +6,7 @@ import folder_paths
 from aiohttp import web
 from comfy_api.latest import io
 from server import PromptServer
-from nodes import LoraLoader
+from .lora_compat import HogKitLoraLoader
 
 
 class LoraLoaderWithPrompt(io.ComfyNode):
@@ -44,7 +44,7 @@ class LoraLoaderWithPrompt(io.ComfyNode):
         if not enable or (lora == "None" and lora_2 == "None") or (strength == 0.0 and strength_2 == 0.0):
             return io.NodeOutput(prompt_input, model, clip, model_2, clip_2)
 
-        loader = LoraLoader()
+        loader = HogKitLoraLoader()
         model_out = model
         clip_out = clip
         if lora != "None" and strength != 0.0:
@@ -95,7 +95,7 @@ class LoraLoaderWithPromptSingle(io.ComfyNode):
         if not enable or lora == "None" or strength == 0.0:
             return io.NodeOutput(prompt_input, model, clip)
 
-        loader = LoraLoader()
+        loader = HogKitLoraLoader()
         model_out, clip_out = loader.load_lora(model, clip, lora, strength, strength)
 
         if lora_prompt.strip() and lora != "None":
@@ -380,7 +380,7 @@ class LoraDualChainLoaderWithMetadata(_LoraChainSupport, io.ComfyNode):
         negative_parts_1 = [negative_input_1.strip()] if negative_input_1 and negative_input_1.strip() else []
         positive_parts_2 = [positive_input_2.strip()] if positive_input_2 and positive_input_2.strip() else []
         negative_parts_2 = [negative_input_2.strip()] if negative_input_2 and negative_input_2.strip() else []
-        loader = LoraLoader()
+        loader = HogKitLoraLoader()
         found_enabled = False
 
         for lora_row in stack_config["rows"]:
@@ -528,7 +528,7 @@ class LoraSingleChainLoaderWithMetadata(_LoraChainSupport, io.ComfyNode):
         delimiter = stack_config["delimiter"]
         positive_parts = [positive_input.strip()] if positive_input and positive_input.strip() else []
         negative_parts = [negative_input.strip()] if negative_input and negative_input.strip() else []
-        loader = LoraLoader()
+        loader = HogKitLoraLoader()
         found_enabled = False
 
         for lora_row in stack_config["rows"]:

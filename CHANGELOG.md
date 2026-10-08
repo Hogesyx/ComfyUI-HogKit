@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.14
+
+### Fixed
+
+- All four HogKit LoRA loaders automatically project dense MiniMax H3 AdaLN LoRAs into pruned/curve checkpoints, preserving rank, alpha, strengths, and the constant term through an additive bias patch.
+- Curve-to-curve and curve-to-dense conversion uses the LoRA's source timestep table when supplied; missing or incompatible bases and unsupported adapter conversions raise an actionable error before applying patches.
+- Qwen Image, Qwen Image 2.1, and other architectures retain ComfyUI's native loader path. Compatible H3 LoRA pairs stay unchanged.
+
+### Added
+
+- Bundled H3 timestep grid with Apache-2.0 attribution and CPU regression tests for basis conversion, loader isolation, and stack strength behavior.
+
 ## 0.2.13
 
 ### Fixed
