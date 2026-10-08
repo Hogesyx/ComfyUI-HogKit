@@ -51,6 +51,8 @@ The metadata editor writes only to the resolved LoRA folder. The ComfyUI process
 
 Both chain loaders support the classic canvas and Nodes 2.0 renderers. The node and sidebar maintain independent canvas geometry, so adding a row, selecting a LoRA, changing its strength, toggling it, editing metadata, or removing it remains interactive across redraws, resizing, and expansion.
 
+The stack uses one stable widget with zoom-correct sizing and ComfyUI's native widget font. Single LoRAs use compact cards; paired LoRAs occupy separate lines within each card. Drag the grip to reorder: the card follows the pointer and neighboring cards animate into place. Releasing commits the new order; cancelling preserves the original order.
+
 ### Image
 
 - **HogKit Load Image** loads images from the ComfyUI input directory or one-level subfolders. Use the folder selector to filter images, the refresh button to rescan the input directory, and the native upload control to browse for a new image. The selected image is previewed on the node.
@@ -94,6 +96,7 @@ python -m py_compile *.py
 node --check web/node_status.js
 node --check web/show_convert_anything.js
 node --check web/lora_chain_loader_with_metadata.js
+node --test tests/lora_chain_widget.test.cjs
 node --check web/recursive_load_image.js
 ```
 

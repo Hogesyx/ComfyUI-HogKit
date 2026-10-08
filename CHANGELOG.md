@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.12
+
+### Changed
+
+- Reworked both LoRA chain loaders to use one stable canvas widget for the entire stack, retaining row controls across edits and reorder operations.
+- Single LoRA cards use compact 44px spacing. Paired LoRAs use two separate lines with compact controls in narrow views.
+- Dragged cards follow the pointer while neighboring cards animate into place; saved row order changes on release. Cancelling a drag preserves the order.
+
+### Fixed
+
+- Corrected Nodes 2.0 legacy-canvas sizing at different zoom levels, preventing inflated text and overlapping cards.
+- Kept pointer coordinates and redraw callbacks independent for the node and sidebar, and disposed callbacks and listeners when hosts or nodes are removed.
+
 ## 0.2.11
 
 ### Changed

@@ -4,7 +4,12 @@ const NODE_CONFIGS = {
   HogKitLoraSingleChainLoaderWithMetadata: { dual: false, minWidth: 440 },
   HogKitLoraDualChainLoaderWithMetadata: { dual: true, minWidth: 640 },
 };
-const ROW_HEIGHT = 64;
+const ROW_HEIGHT = 44;
+const DUAL_ROW_HEIGHT = 76;
+
+function rowHeight(node) {
+  return node.isDualChain ? DUAL_ROW_HEIGHT : ROW_HEIGHT;
+}
 let notesTooltip = null;
 let notesTooltipHideTimer = null;
 
@@ -118,31 +123,36 @@ function redrawNode(node) {
 }
 
 function supportMultipleWidgetHosts(widget) {
-  const redrawCallbacks = new Set();
-  const existingTriggerDraw = widget.triggerDraw;
-  if (typeof existingTriggerDraw === "function") {
-    redrawCallbacks.add(existingTriggerDraw);
-  }
-
+  const hosts = new Map();
+  let pendingDraw = null;
   const triggerAllDraws = () => {
-    for (const callback of [...redrawCallbacks]) {
+    for (const [canvas, callback] of hosts) {
+      if (canvas.isConnected === false) {
+        hosts.delete(canvas);
+        continue;
+      }
       try {
         callback();
       } catch {
-        // Nodes 2.0 does not identify which host is being unmounted, so prune
-        // callbacks once their canvas is no longer available.
-        redrawCallbacks.delete(callback);
+        hosts.delete(canvas);
       }
     }
   };
-
+  widget.captureDrawHost = (canvas) => {
+    if (pendingDraw) {
+      hosts.set(canvas, pendingDraw);
+      pendingDraw = null;
+    }
+  };
+  widget.disposeDrawHosts = () => { hosts.clear(); pendingDraw = null; };
   Object.defineProperty(widget, "triggerDraw", {
     configurable: true,
     enumerable: true,
     get: () => triggerAllDraws,
     set: (callback) => {
       if (typeof callback === "function" && callback !== triggerAllDraws) {
-        redrawCallbacks.add(callback);
+        pendingDraw = callback;
+        try { callback(); } finally { pendingDraw = null; }
       }
     },
   });
@@ -249,13 +259,13 @@ function rowDropTargetIndex(node, pos) {
   }
   const rowsStartY = node.rowsStartY ?? 0;
   return clamp(
-    Math.floor((pos[1] - rowsStartY) / ROW_HEIGHT),
+    Math.floor((pos[1] - rowsStartY) / rowHeight(node)),
     0,
     node.rows.length - 1,
   );
 }
 
-function finishRowDrag(node, pos) {
+function finishRowDrag(node, pos, cancelled = false) {
   if (node.draggingRow == null) {
     return false;
   }
@@ -264,8 +274,10 @@ function finishRowDrag(node, pos) {
   const sourceIndex = node.draggingRow;
   node.draggingRow = null;
   node.dragLastTarget = null;
+  node.dragPointerY = null;
+  node.dragGrabOffset = null;
 
-  if (targetIndex != null && sourceIndex !== targetIndex) {
+  if (!cancelled && targetIndex != null && sourceIndex !== targetIndex) {
     moveItem(node.rows, sourceIndex, targetIndex);
     node.updateStackWidget();
     node.rebuildWidgets?.();
@@ -289,8 +301,9 @@ function fitText(ctx, text, maxWidth) {
   if (ctx.measureText(value).width <= maxWidth) {
     return value;
   }
+  if (ctx.measureText("...").width > maxWidth) return "";
   let trimmed = value;
-  while (trimmed.length > 4 && ctx.measureText(`${trimmed}...`).width > maxWidth) {
+  while (trimmed.length && ctx.measureText(`${trimmed}...`).width > maxWidth) {
     trimmed = trimmed.slice(0, -1);
   }
   return `${trimmed}...`;
@@ -315,7 +328,7 @@ function drawButton(ctx, rect, label, disabled = false) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   setNativeWidgetFont(ctx);
-  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.fillText(fitText(ctx, label, rect.w - 8), rect.x + rect.w / 2, rect.y + rect.h / 2);
   ctx.restore();
 }
 
@@ -368,15 +381,18 @@ function hit(pos, rect) {
 }
 
 function captureWidgetCanvas(widget, ctx) {
-  const scale = ctx.getTransform?.().a || 1;
+  const transform = ctx.getTransform?.();
+  const scaleX = transform?.a || 1;
+  const scaleY = transform?.d || scaleX;
+  widget.captureDrawHost?.(ctx.canvas);
   widget.pointerCanvases ||= new WeakMap();
   widget.pointerCanvases.set(ctx.canvas, {
-    width: ctx.canvas.width / scale,
-    height: ctx.canvas.height / scale,
+    width: ctx.canvas.width / scaleX,
+    height: ctx.canvas.height / scaleY,
   });
   widget.pointerCanvas = ctx.canvas;
-  widget.pointerWidth = ctx.canvas.width / scale;
-  widget.pointerHeight = ctx.canvas.height / scale;
+  widget.pointerWidth = ctx.canvas.width / scaleX;
+  widget.pointerHeight = ctx.canvas.height / scaleY;
 }
 
 function widgetCanvasForEvent(widget, event) {
@@ -450,6 +466,8 @@ function handleVueWidgetPointerDown(widget, pointer, node) {
     const upPos = widgetPointerPosition(widget, upEvent, canvas);
     if (upEvent && upPos) {
       widget.mouse(upEvent, upPos, node);
+    } else {
+      finishRowDrag(node, null, true);
     }
     widget.activePointerCanvas = null;
   };
@@ -1273,8 +1291,6 @@ class LoraRowWidget {
     this.preview2 = "";
     this.notes1 = "";
     this.notes2 = "";
-    this.hoverCanvases = new Map();
-    supportMultipleWidgetHosts(this);
     this.loadPreview("1");
     if (node.isDualChain) {
       this.loadPreview("2");
@@ -1282,21 +1298,17 @@ class LoraRowWidget {
   }
 
   computeSize(width) {
-    return [width, ROW_HEIGHT];
+    return [width, rowHeight(this.node)];
   }
 
   draw(ctx, node, width, y) {
     captureWidgetCanvas(this, ctx);
-    this.bindHoverCanvas(ctx.canvas);
     this.hitAreas = {};
-    if (this.rowIndex === 0) {
-      node.rowsStartY = y;
-    }
     const margin = 12;
     const rowX = margin;
     const rowY = y + 4;
     const rowW = width - margin * 2;
-    const rowH = ROW_HEIGHT - 8;
+    const rowH = rowHeight(node) - 8;
     const controlSize = 22;
     const gap = 5;
     const controlY = rowY + (rowH - controlSize) / 2;
@@ -1308,15 +1320,6 @@ class LoraRowWidget {
     ctx.roundRect(rowX, rowY, rowW, rowH, 5);
     ctx.fill();
     ctx.stroke();
-
-    if (node.draggingRow != null && node.dragLastTarget === this.rowIndex
-      && node.draggingRow !== this.rowIndex) {
-      ctx.strokeStyle = LiteGraph.WIDGET_TEXT_COLOR || "#eee";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(rowX + 1, rowY + 1, rowW - 2, rowH - 2, 5);
-      ctx.stroke();
-    }
 
     let x = rowX + 7;
     const dragRect = { x, y: controlY, w: 16, h: 22 };
@@ -1332,14 +1335,12 @@ class LoraRowWidget {
     const removeRect = { x: rowX + rowW - controlSize - 6, y: controlY, w: controlSize, h: controlSize };
     const editRect = { x: removeRect.x - controlSize - gap, y: controlY, w: controlSize, h: controlSize };
     const panelGap = 8;
-    const panelW = node.isDualChain
-      ? Math.max(120, (editRect.x - x - panelGap * 2) / 2)
-      : Math.max(120, editRect.x - x - panelGap);
-    const panel1 = { x, y: rowY + 7, w: panelW, h: rowH - 14 };
+    const panelW = Math.max(0, editRect.x - x - panelGap);
+    const panel1 = { x, y: rowY + 7, w: panelW, h: 22 };
 
     this.drawSlot(ctx, panel1, "1", this.row.lora_1_enabled !== false);
     if (node.isDualChain) {
-      const panel2 = { x: x + panelW + panelGap, y: rowY + 7, w: panelW, h: rowH - 14 };
+      const panel2 = { x, y: rowY + 39, w: panelW, h: 22 };
       this.drawSlot(ctx, panel2, "2", this.row.lora_2_enabled !== false);
     }
 
@@ -1358,11 +1359,13 @@ class LoraRowWidget {
 
   drawSlot(ctx, rect, role, enabled) {
     const controlY = rect.y + (rect.h - 20) / 2;
-    const loraRect = { x: rect.x + 22, y: controlY, w: Math.max(40, rect.w - 84), h: 20 };
+    const compact = rect.w < 190;
     const strengthRect = { x: rect.x + rect.w - 58, y: controlY, w: 52, h: 20 };
-    const toggleRect = { x: rect.x + 2, y: controlY, w: 50, h: 20 };
-    const isSlot2 = role === "2";
-    const isSlot1 = role === "1";
+    const toggleRect = { x: rect.x + 2, y: controlY, w: compact ? 22 : 50, h: 20 };
+    const loraRect = {
+      x: toggleRect.x + toggleRect.w + 6, y: controlY,
+      w: Math.max(0, strengthRect.x - toggleRect.x - toggleRect.w - 12), h: 20,
+    };
 
     ctx.save();
     ctx.globalAlpha = enabled ? 1 : 0.45;
@@ -1373,19 +1376,10 @@ class LoraRowWidget {
     ctx.fill();
     ctx.stroke();
 
-    if (isSlot2) {
-      this.hitAreas.slot2 = rect;
-      this.hitAreas.toggle2 = toggleRect;
-      drawGreenPillToggle(ctx, toggleRect, this.row.lora_2_enabled !== false);
-      loraRect.x = toggleRect.x + toggleRect.w + 6;
-      loraRect.w = Math.max(40, strengthRect.x - loraRect.x - 6);
-    } else if (isSlot1) {
-      this.hitAreas.slot1 = rect;
-      this.hitAreas.toggle1 = toggleRect;
-      drawGreenPillToggle(ctx, toggleRect, this.row.lora_1_enabled !== false);
-      loraRect.x = toggleRect.x + toggleRect.w + 6;
-      loraRect.w = Math.max(40, strengthRect.x - loraRect.x - 6);
-    }
+    this.hitAreas[`slot${role}`] = rect;
+    this.hitAreas[`toggle${role}`] = toggleRect;
+    if (compact) drawButton(ctx, toggleRect, enabled ? "\u2713" : "\u2013", !enabled);
+    else drawGreenPillToggle(ctx, toggleRect, enabled);
 
     this.hitAreas[`lora${role}`] = loraRect;
     this.hitAreas[`strength${role}`] = strengthRect;
@@ -1397,7 +1391,7 @@ class LoraRowWidget {
     const rolePrefix = this.node.isDualChain ? `${role}: ` : "";
     ctx.fillText(fitText(ctx, `${rolePrefix}${rowDisplayName(this.row, role)}`, loraRect.w), loraRect.x, loraRect.y + loraRect.h / 2);
 
-    drawButton(ctx, strengthRect, `s ${Number(strengthForRole(this.row, role) ?? 1).toFixed(2)}`, !enabled);
+    drawButton(ctx, strengthRect, `${compact ? "" : "s "}${Number(strengthForRole(this.row, role) ?? 1).toFixed(2)}`, !enabled);
     ctx.restore();
   }
 
@@ -1419,58 +1413,26 @@ class LoraRowWidget {
     return false;
   }
 
-  bindHoverCanvas(canvas) {
-    const graphCanvas = app.canvas?.canvas;
-    if (!canvas || canvas === graphCanvas || this.hoverCanvases.has(canvas)) {
-      return;
-    }
-    const moveHandler = (event) => {
-      const pos = widgetPointerPosition(this, event, canvas) || [event.offsetX, event.offsetY];
-      const hitAreas = this.hitAreasByCanvas?.get(canvas) || this.hitAreas;
-      if (!this.handleHover(pos, event, hitAreas)) {
-        scheduleNotesTooltipHide();
-      }
-    };
-    const leaveHandler = scheduleNotesTooltipHide;
-    this.hoverCanvases.set(canvas, { moveHandler, leaveHandler });
-    canvas.addEventListener("pointermove", moveHandler);
-    canvas.addEventListener("pointerleave", leaveHandler);
-  }
-
-  unbindHoverCanvases() {
-    for (const [canvas, handlers] of this.hoverCanvases) {
-      canvas.removeEventListener("pointermove", handlers.moveHandler);
-      canvas.removeEventListener("pointerleave", handlers.leaveHandler);
-    }
-    this.hoverCanvases.clear();
-  }
-
   onRemove() {
-    this.unbindHoverCanvases();
+    this.removed = true;
     scheduleNotesTooltipHide();
   }
 
   redraw() {
-    this.triggerDraw?.();
-    redrawNode(this.node);
-  }
-
-  onPointerDown(pointer, node) {
-    return handleVueWidgetPointerDown(this, pointer, node);
+    if (!this.removed) redrawNode(this.node);
   }
 
   mouse(event, pos, node) {
     activateWidgetHost(this, event);
     if (event.type === "pointerup" || event.type === "pointercancel") {
-      return finishRowDrag(node, pos);
+      return finishRowDrag(node, pos, event.type === "pointercancel");
     }
 
     if (event.type === "pointermove" && node.draggingRow != null) {
+      node.dragPointerY = pos[1] - node.rowsStartY;
       const targetIndex = rowDropTargetIndex(node, pos);
-      if (node.dragLastTarget !== targetIndex) {
-        node.dragLastTarget = targetIndex;
-        redrawNode(node);
-      }
+      node.dragLastTarget = targetIndex;
+      redrawNode(node);
       return true;
     }
 
@@ -1480,6 +1442,8 @@ class LoraRowWidget {
     if (hit(pos, this.hitAreas.drag)) {
       node.draggingRow = this.rowIndex;
       node.dragLastTarget = this.rowIndex;
+      node.dragPointerY = pos[1] - node.rowsStartY;
+      node.dragGrabOffset = pos[1] - node.rowsStartY - this.rowIndex * rowHeight(node);
       redrawNode(node);
       return true;
     }
@@ -1623,6 +1587,7 @@ class LoraRowWidget {
     }
     try {
       const payload = await fetchMetadata(lora);
+      if (this.removed || loraForRole(this.row, role) !== lora) return;
       if (payload.metadata && typeof payload.metadata.strength !== "undefined") {
         setStrengthForRole(this.row, role, Number(payload.metadata.strength));
       }
@@ -1637,6 +1602,7 @@ class LoraRowWidget {
       }
       this.redraw();
     } catch {
+      if (this.removed || loraForRole(this.row, role) !== lora) return;
       if (role === "2") {
         this.preview2 = "";
         this.notes2 = "";
@@ -1648,6 +1614,186 @@ class LoraRowWidget {
   }
 }
 
+// One stable widget owns the entire stack. Rows are drawing/controllers, not
+// separately mounted Vue canvases, so their coordinates share one origin.
+class LoraChainWidget {
+  constructor(node) {
+    this.type = "custom";
+    this.name = "lora_chain";
+    this.serialize = false;
+    this.node = node;
+    this.rows = [];
+    this.layouts = new Map();
+    this.hoverCanvases = new Map();
+    this.settings = new LoraSettingsWidget(node, 0);
+    this.frame = null;
+    supportMultipleWidgetHosts(this);
+    this.syncRows();
+  }
+
+  get height() { return this.rows.length * rowHeight(this.node) + 68; }
+
+  computeSize(width) { return [Math.max(width, this.node.loraChainMinWidth), this.height]; }
+
+  computeLayoutSize() {
+    return { minWidth: this.node.loraChainMinWidth, minHeight: this.height, maxHeight: this.height };
+  }
+
+  syncRows() {
+    const previous = this.rows;
+    const byRow = new Map(previous.map(widget => [widget.row, widget]));
+    this.rows = this.node.rows.map((row, index) => {
+      const widget = byRow.get(row) || new LoraRowWidget(this.node, row, index, 0);
+      widget.rowIndex = index;
+      return widget;
+    });
+    this.computedHeight = this.height;
+    for (const widget of previous) {
+      if (!this.rows.includes(widget)) widget.onRemove();
+    }
+    for (const state of this.layouts.values()) {
+      state.offsets = this.rows.map((widget, index) => {
+        const oldIndex = previous.indexOf(widget);
+        return oldIndex < 0 ? 0 : (oldIndex - index) * rowHeight(this.node) + (state.offsets[oldIndex] || 0);
+      });
+    }
+  }
+
+  draw(ctx, node, width, y) {
+    ctx.save();
+    // WidgetLegacy draws using screen width, although CSS stretches its canvas
+    // to the node's unzoomed width. Normalize X and explicitly size its height
+    // so node zoom cannot inflate text, cards, or pointer hitboxes.
+    if (ctx.canvas !== app.canvas?.canvas && ctx.canvas.parentElement) {
+      const logicalWidth = ctx.canvas.parentElement?.clientWidth || width;
+      const scaleY = ctx.getTransform?.().d || 2;
+      const cssHeight = ctx.canvas.height / scaleY;
+      if (ctx.canvas.style.height !== `${cssHeight}px`) ctx.canvas.style.height = `${cssHeight}px`;
+      ctx.scale(width / logicalWidth, 1);
+      width = logicalWidth;
+    }
+    captureWidgetCanvas(this, ctx);
+    this.bindHoverCanvas(ctx.canvas);
+    let state = this.layouts.get(ctx.canvas);
+    if (!state) {
+      state = { offsets: this.rows.map(() => 0), time: performance.now() };
+      this.layouts.set(ctx.canvas, state);
+    }
+    state.y = y;
+    node.rowsStartY = y;
+    const now = performance.now();
+    const blend = 1 - Math.exp(-Math.max(1, now - state.time) / 55);
+    state.time = now;
+    let animating = false;
+    const source = node.draggingRow;
+    const target = node.dragLastTarget;
+    const pitch = rowHeight(node);
+    this.rows.forEach((widget, index) => {
+      let desired = 0;
+      if (source != null) {
+        if (source < target && index > source && index <= target) desired = -pitch;
+        if (source > target && index >= target && index < source) desired = pitch;
+      }
+      let offset = state.offsets[index] || 0;
+      if (index === source) {
+        offset = clamp((node.dragPointerY ?? 0) - (node.dragGrabOffset || 0),
+          0, Math.max(0, (this.rows.length - 1) * pitch)) - index * pitch;
+      } else if (Math.abs(desired - offset) > 0.1) {
+        offset += (desired - offset) * blend;
+        animating = true;
+      } else {
+        offset = desired;
+      }
+      state.offsets[index] = offset;
+      if (index !== source) widget.draw(ctx, node, width, y + index * pitch + offset);
+    });
+    if (source != null && this.rows[source]) {
+      const rowY = y + source * pitch + state.offsets[source];
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      this.rows[source].draw(ctx, node, width, rowY);
+      ctx.strokeStyle = LiteGraph.WIDGET_TEXT_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(12, rowY + 4, width - 24, pitch - 8);
+      ctx.restore();
+    }
+    this.settings.draw(ctx, node, width, y + this.rows.length * pitch);
+    ctx.restore();
+    if (animating && this.frame == null) {
+      this.frame = requestAnimationFrame(() => {
+        this.frame = null;
+        redrawNode(this.node);
+      });
+    }
+    for (const canvas of this.layouts.keys()) {
+      if (canvas.isConnected === false) {
+        this.layouts.delete(canvas);
+        const handlers = this.hoverCanvases.get(canvas);
+        if (handlers) {
+          canvas.removeEventListener("pointermove", handlers.move);
+          canvas.removeEventListener("pointerleave", handlers.leave);
+          this.hoverCanvases.delete(canvas);
+        }
+      }
+    }
+  }
+
+  mouse(event, pos, node) {
+    const canvas = widgetCanvasForEvent(this, event);
+    const state = this.layouts.get(canvas);
+    if (!state) return false;
+    node.rowsStartY = state.y;
+    if (node.draggingRow != null) {
+      return this.rows[node.draggingRow]?.mouse(event, pos, node) || false;
+    }
+    for (const widget of this.rows) {
+      const areas = widget.hitAreasByCanvas?.get(canvas);
+      if (areas && Object.values(areas).some(rect => hit(pos, rect))) {
+        widget.hitAreas = areas;
+        return widget.mouse(event, pos, node);
+      }
+    }
+    const areas = this.settings.hitAreasByCanvas?.get(canvas);
+    if (areas) this.settings.hitAreas = areas;
+    return this.settings.mouse(event, pos, node);
+  }
+
+  onPointerDown(pointer, node) { return handleVueWidgetPointerDown(this, pointer, node); }
+
+  handleHover(pos, event) {
+    const canvas = widgetCanvasForEvent(this, event);
+    if (this.node.draggingRow != null) return false;
+    return this.rows.some(widget => widget.handleHover(pos, event, widget.hitAreasByCanvas?.get(canvas)));
+  }
+
+  bindHoverCanvas(canvas) {
+    if (canvas === app.canvas?.canvas || this.hoverCanvases.has(canvas)) return;
+    const move = event => {
+      const pos = widgetPointerPosition(this, event, canvas);
+      if (!pos || !this.handleHover(pos, event)) scheduleNotesTooltipHide();
+    };
+    const leave = scheduleNotesTooltipHide;
+    this.hoverCanvases.set(canvas, { move, leave });
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerleave", leave);
+  }
+
+  onRemove() {
+    this.disposeDrawHosts();
+    finishRowDrag(this.node, null, true);
+    if (this.frame != null) cancelAnimationFrame(this.frame);
+    this.frame = null;
+    this.activePointerCanvas = null;
+    this.layouts.clear();
+    for (const [canvas, handlers] of this.hoverCanvases) {
+      canvas.removeEventListener("pointermove", handlers.move);
+      canvas.removeEventListener("pointerleave", handlers.leave);
+    }
+    this.hoverCanvases.clear();
+    for (const widget of this.rows) widget.onRemove();
+  }
+}
+
 class LoraSettingsWidget {
   constructor(node, generation) {
     this.type = "custom";
@@ -1655,7 +1801,6 @@ class LoraSettingsWidget {
     this.serialize = false;
     this.node = node;
     this.hitAreas = {};
-    supportMultipleWidgetHosts(this);
   }
 
   computeSize(width) {
@@ -1710,7 +1855,6 @@ class LoraSettingsWidget {
         if (value != null) {
           node.delimiter = value;
           node.updateStackWidget();
-          this.triggerDraw?.();
           redrawNode(node);
         }
       }, event);
@@ -1816,10 +1960,7 @@ app.registerExtension({
       this.rows = (this.rows || []).map((row) => normalizeRow(row));
       this.delimiter = this.delimiter ?? ", ";
       this.exclusive = !!this.exclusive;
-      this.removeRowWidgets();
       this.removeEnableInputs();
-      this.loraWidgetGeneration = (this.loraWidgetGeneration || 0) + 1;
-      const generation = this.loraWidgetGeneration;
 
       let addButton = this.widgets?.find((widget) => widget.loraAddWidget);
       if (!addButton) {
@@ -1836,15 +1977,14 @@ app.registerExtension({
         addButton.serialize = false;
       }
 
-      this.rows.forEach((row, rowIndex) => {
-        const widget = new LoraRowWidget(this, row, rowIndex, generation);
-        widget.loraDynamicWidget = true;
-        this.addCustomWidget(widget);
-      });
-
-      const settingsWidget = new LoraSettingsWidget(this, generation);
-      settingsWidget.loraDynamicWidget = true;
-      this.addCustomWidget(settingsWidget);
+      let chainWidget = this.widgets?.find(widget => widget instanceof LoraChainWidget);
+      if (!chainWidget) {
+        chainWidget = new LoraChainWidget(this);
+        chainWidget.loraDynamicWidget = true;
+        this.addCustomWidget(chainWidget);
+      } else {
+        chainWidget.syncRows();
+      }
 
       if (this.stackWidget) {
         this.updateStackWidget();
@@ -1930,6 +2070,12 @@ app.registerExtension({
       const result = originalOnMouseLeave?.apply(this, arguments);
       scheduleNotesTooltipHide();
       return result;
+    };
+
+    const originalOnRemoved = nodeType.prototype.onRemoved;
+    nodeType.prototype.onRemoved = function () {
+      this.removeRowWidgets();
+      return originalOnRemoved?.apply(this, arguments);
     };
 
   },
