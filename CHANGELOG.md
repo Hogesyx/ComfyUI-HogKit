@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.15
+
+### Fixed
+
+- Node Status and its If/Else Switch keep their target reference connected during prompt export and workflow persistence. The reference is removed only from the API payload, leaving workflow links intact.
+- Declared the wildcard target socket in the native schema and stopped moving input slots during configuration, preserving MODEL references and existing link indices.
+
 ## 0.2.14
 
 ### Fixed

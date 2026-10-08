@@ -66,11 +66,9 @@ function ensureTargetInput(node) {
     targetInput = node.addInput(TARGET_INPUT, "*");
   }
 
-  const targetIndex = node.inputs?.indexOf(targetInput) ?? -1;
-  if (targetIndex > 0) {
-    node.inputs.splice(targetIndex, 1);
-    node.inputs.unshift(targetInput);
-  }
+  // Keep the serialized slot index: moving inputs without updating graph links
+  // can disconnect existing MODEL links on workflow restoration.
+  targetInput.type = "*";
 }
 
 function setupStatusWidget(node) {
@@ -92,9 +90,20 @@ function setupStatusWidget(node) {
 }
 
 function getStatusNodes(graph) {
-  return (graph?._nodes || []).filter((node) => (
-    STATUS_NODE_NAMES.has(node.comfyClass) || STATUS_NODE_NAMES.has(node.type)
-  ));
+  const visited = new Set();
+  const statusNodes = [];
+  function visit(node) {
+    if (visited.has(node)) return;
+    visited.add(node);
+    if (STATUS_NODE_NAMES.has(node.comfyClass) || STATUS_NODE_NAMES.has(node.type)) {
+      statusNodes.push(node);
+    }
+    for (const innerNode of node.getInnerNodes?.(new Map()) || []) {
+      visit(innerNode);
+    }
+  }
+  for (const node of graph?._nodes || []) visit(node);
+  return statusNodes;
 }
 
 app.registerExtension({
@@ -130,24 +139,20 @@ app.registerExtension({
     }
 
     app.graphToPrompt = async function (...args) {
-      const graph = args[0] || app.graph;
-      const detachedLinks = [];
+      const graph = args[0]?._nodes ? args[0] : app.graph;
       for (const node of getStatusNodes(graph)) {
         updateStatus(node);
-        const targetInput = getTargetInput(node);
-        if (targetInput?.link != null) {
-          detachedLinks.push([targetInput, targetInput.link]);
-          targetInput.link = null;
-        }
       }
 
-      try {
-        return await originalGraphToPrompt.apply(this, args);
-      } finally {
-        for (const [targetInput, link] of detachedLinks) {
-          targetInput.link = link;
+      // The workflow must retain the reference wire. Strip only the API input,
+      // after serialization, so it never becomes a model execution dependency.
+      const prompt = await originalGraphToPrompt.apply(this, args);
+      for (const entry of Object.values(prompt.output || {})) {
+        if (STATUS_NODE_NAMES.has(entry.class_type) && entry.inputs) {
+          delete entry.inputs[TARGET_INPUT];
         }
       }
+      return prompt;
     };
   },
 });

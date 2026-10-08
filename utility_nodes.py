@@ -15,6 +15,10 @@ class NodeStatus(io.ComfyNode):
             description="Reports whether the connected node is working, muted, or bypassed.",
             search_aliases=["node mode", "working", "muted", "bypassed"],
             inputs=[
+                io.AnyType.Input(
+                    "target", optional=True, raw_link=True,
+                    tooltip="Reference to the node whose mode is inspected; its output is not evaluated.",
+                ),
                 io.String.Input(
                     "target_status",
                     default="unknown",
@@ -31,7 +35,7 @@ class NodeStatus(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, target_status="unknown"):
+    def execute(cls, target_status="unknown", target=MISSING):
         if target_status not in {"working", "bypassed", "muted"}:
             target_status = "unknown"
 
@@ -62,6 +66,10 @@ class NodeStatusIfElseSwitch(io.ComfyNode):
             description="Selects on_true or on_false from the connected node's status.",
             search_aliases=["node status switch", "status if", "status branch"],
             inputs=[
+                io.AnyType.Input(
+                    "target", optional=True, raw_link=True,
+                    tooltip="Reference to the node whose mode is inspected; its output is not evaluated.",
+                ),
                 io.Combo.Input(
                     "switch",
                     options=list(cls._CONDITIONS),
@@ -91,6 +99,7 @@ class NodeStatusIfElseSwitch(io.ComfyNode):
         target_status="unknown",
         on_true=MISSING,
         on_false=MISSING,
+        target=MISSING,
     ):
         if cls._is_true(target_status, switch):
             if on_true is None:
@@ -105,6 +114,7 @@ class NodeStatusIfElseSwitch(io.ComfyNode):
         target_status="unknown",
         on_true=MISSING,
         on_false=MISSING,
+        target=MISSING,
     ):
         if on_true is MISSING:
             on_true = None
