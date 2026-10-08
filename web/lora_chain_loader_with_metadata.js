@@ -328,7 +328,8 @@ function drawButton(ctx, rect, label, disabled = false) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   setNativeWidgetFont(ctx);
-  ctx.fillText(fitText(ctx, label, rect.w - 8), rect.x + rect.w / 2, rect.y + rect.h / 2);
+  const text = String(label).length <= 2 ? label : fitText(ctx, label, rect.w - 8);
+  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2, rect.w - 4);
   ctx.restore();
 }
 
@@ -364,7 +365,9 @@ function drawGreenPillToggle(ctx, rect, enabled) {
   setNativeWidgetFont(ctx);
   ctx.textAlign = enabled ? "left" : "right";
   ctx.textBaseline = "middle";
-  ctx.fillText(enabled ? "ON" : "OFF", enabled ? rect.x + 7 : rect.x + rect.w - 7, rect.y + rect.h / 2);
+  if (rect.w >= 44) {
+    ctx.fillText(enabled ? "ON" : "OFF", enabled ? rect.x + 7 : rect.x + rect.w - 7, rect.y + rect.h / 2);
+  }
   ctx.restore();
 }
 
@@ -1304,13 +1307,14 @@ class LoraRowWidget {
   draw(ctx, node, width, y) {
     captureWidgetCanvas(this, ctx);
     this.hitAreas = {};
-    const margin = 12;
+    const compact = width < 400;
+    const margin = compact ? 6 : 12;
     const rowX = margin;
     const rowY = y + 4;
     const rowW = width - margin * 2;
     const rowH = rowHeight(node) - 8;
-    const controlSize = 22;
-    const gap = 5;
+    const controlSize = compact ? 18 : 22;
+    const gap = compact ? 3 : 5;
     const controlY = rowY + (rowH - controlSize) / 2;
 
     ctx.save();
@@ -1321,20 +1325,20 @@ class LoraRowWidget {
     ctx.fill();
     ctx.stroke();
 
-    let x = rowX + 7;
-    const dragRect = { x, y: controlY, w: 16, h: 22 };
+    let x = rowX + (compact ? 4 : 7);
+    const dragRect = { x, y: controlY, w: compact ? 12 : 16, h: 22 };
     this.hitAreas.drag = dragRect;
     drawDragHandle(ctx, dragRect);
-    x += dragRect.w + 7;
+    x += dragRect.w + (compact ? 4 : 7);
 
-    const toggleRect = { x, y: controlY, w: 50, h: 22 };
+    const toggleRect = { x, y: controlY, w: compact ? 32 : 50, h: 22 };
     this.hitAreas.toggle = toggleRect;
     this.drawToggle(ctx, toggleRect);
-    x += toggleRect.w + 8;
+    x += toggleRect.w + (compact ? 4 : 8);
 
-    const removeRect = { x: rowX + rowW - controlSize - 6, y: controlY, w: controlSize, h: controlSize };
+    const removeRect = { x: rowX + rowW - controlSize - (compact ? 4 : 6), y: controlY, w: controlSize, h: controlSize };
     const editRect = { x: removeRect.x - controlSize - gap, y: controlY, w: controlSize, h: controlSize };
-    const panelGap = 8;
+    const panelGap = compact ? 4 : 8;
     const panelW = Math.max(0, editRect.x - x - panelGap);
     const panel1 = { x, y: rowY + 7, w: panelW, h: 22 };
 
@@ -1346,7 +1350,7 @@ class LoraRowWidget {
 
     this.hitAreas.edit = editRect;
     this.hitAreas.remove = removeRect;
-    drawButton(ctx, editRect, "{}");
+    drawButton(ctx, editRect, compact ? "\u270e" : "{}");
     drawButton(ctx, removeRect, "x");
 
     if (this.row.enabled === false) {
@@ -1360,11 +1364,13 @@ class LoraRowWidget {
   drawSlot(ctx, rect, role, enabled) {
     const controlY = rect.y + (rect.h - 20) / 2;
     const compact = rect.w < 190;
-    const strengthRect = { x: rect.x + rect.w - 58, y: controlY, w: 52, h: 20 };
-    const toggleRect = { x: rect.x + 2, y: controlY, w: compact ? 22 : 50, h: 20 };
+    const strengthWidth = compact ? 42 : 52;
+    const gap = compact ? 4 : 6;
+    const strengthRect = { x: rect.x + rect.w - strengthWidth - gap, y: controlY, w: strengthWidth, h: 20 };
+    const toggleRect = { x: rect.x + 2, y: controlY, w: compact ? 20 : 50, h: 20 };
     const loraRect = {
-      x: toggleRect.x + toggleRect.w + 6, y: controlY,
-      w: Math.max(0, strengthRect.x - toggleRect.x - toggleRect.w - 12), h: 20,
+      x: toggleRect.x + toggleRect.w + gap, y: controlY,
+      w: Math.max(0, strengthRect.x - toggleRect.x - toggleRect.w - 2 * gap), h: 20,
     };
 
     ctx.save();
@@ -1621,6 +1627,8 @@ class LoraChainWidget {
     this.type = "custom";
     this.name = "lora_chain";
     this.serialize = false;
+    // ComfyUI adopts custom widgets into LegacyWidget, changing their prototype.
+    this.hogkitChainWidget = true;
     this.node = node;
     this.rows = [];
     this.layouts = new Map();
@@ -1631,12 +1639,13 @@ class LoraChainWidget {
     this.syncRows();
   }
 
-  get height() { return this.rows.length * rowHeight(this.node) + 68; }
+  // BaseWidget owns `height` (the native 24px default), so use a separate name.
+  get stackHeight() { return this.rows.length * rowHeight(this.node) + 68; }
 
-  computeSize(width) { return [Math.max(width, this.node.loraChainMinWidth), this.height]; }
+  computeSize(width) { return [Math.max(width, this.node.loraChainMinWidth), this.stackHeight]; }
 
   computeLayoutSize() {
-    return { minWidth: this.node.loraChainMinWidth, minHeight: this.height, maxHeight: this.height };
+    return { minWidth: this.node.loraChainMinWidth, minHeight: this.stackHeight, maxHeight: this.stackHeight };
   }
 
   syncRows() {
@@ -1647,7 +1656,7 @@ class LoraChainWidget {
       widget.rowIndex = index;
       return widget;
     });
-    this.computedHeight = this.height;
+    this.computedHeight = this.stackHeight;
     for (const widget of previous) {
       if (!this.rows.includes(widget)) widget.onRemove();
     }
@@ -1977,7 +1986,7 @@ app.registerExtension({
         addButton.serialize = false;
       }
 
-      let chainWidget = this.widgets?.find(widget => widget instanceof LoraChainWidget);
+      let chainWidget = this.widgets?.find(widget => widget.hogkitChainWidget);
       if (!chainWidget) {
         chainWidget = new LoraChainWidget(this);
         chainWidget.loraDynamicWidget = true;

@@ -87,8 +87,8 @@ function fixture(dual = false) {
 test("one stable stack widget owns all rows and fixed layout height", () => {
   const { node, chain } = fixture();
   assert.equal(node.widgets.filter(w => w.loraDynamicWidget).length, 1);
-  assert.equal(chain.height, 3 * 44 + 68);
-  assert.equal(chain.computeLayoutSize().minHeight, chain.height);
+  assert.equal(chain.stackHeight, 3 * 44 + 68);
+  assert.equal(chain.computeLayoutSize().minHeight, chain.stackHeight);
   const firstController = chain.rows[0];
   node.rows.push({ enabled: true, lora_1: "None" });
   node.rebuildWidgets();
@@ -105,8 +105,8 @@ test("zoomed and sidebar hosts keep logical dimensions and nonoverlapping cards"
         const host = view(width, zoom);
         const geometry = chain.pointerCanvases.get(host.canvas);
         assert.equal(geometry.width, width);
-        assert.equal(geometry.height, chain.height + 2);
-        assert.equal(host.canvas.getBoundingClientRect().height, (chain.height + 2) * zoom);
+        assert.equal(geometry.height, chain.stackHeight + 2);
+        assert.equal(host.canvas.getBoundingClientRect().height, (chain.stackHeight + 2) * zoom);
         const rows = chain.rows.map(w => w.hitAreasByCanvas.get(host.canvas));
         for (let i = 1; i < rows.length; i++) {
           assert.ok(rows[i - 1].slot1.y + rows[i - 1].slot1.h < rows[i].slot1.y);

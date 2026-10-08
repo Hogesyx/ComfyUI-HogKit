@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.13
+
+### Fixed
+
+- Corrected the chain-widget identity check after ComfyUI adopts custom widgets into its LegacyWidget class, preventing duplicate stacks on workflow configuration.
+- Used a separate stack-height property so ComfyUI's native 24px widget height cannot clip the LoRA rows or settings.
+- Compacted controls in narrow sidebar canvases to retain space for LoRA filenames.
+
 ## 0.2.12
 
 ### Changed
